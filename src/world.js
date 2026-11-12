@@ -692,10 +692,50 @@ export async function buildWorld({ scene, renderer, manager, Q }) {
     genSide(ring, no, -21, 24, 0, 5, 4, M.brickDark, 0.12); genSide(ring, no, 6, 24, 0, 5, 3, M.tileSq, 0.12);
     const bk = bakeBlock(ring, 0, -5); lods.push({ near: bk.near, pivot: bk.pivot, x: 0, z: -5, r: 36, nearIn: true, pivIn: true });
   }
+  // ---------------------------------------------------------------- the hospital: three storeys, with a ground-floor ward you can walk into (the game starts in one of its beds)
+  let hospital = null;
+  function genHospital(x0, x1, z0, z1) {
+    const blk = new THREE.Group(), lts = [], c0 = colliders.length, ax = x0 + 1, bx = x1 - 1, az = z0 + 1, bz = z1 - 1, w = bx - ax, d = bz - az, cx = (ax + bx) / 2, cz = (az + bz) / 2, T = 0.4, FH = 3.4, H = FH * 3, door = 5;
+    const wallM = M.plaster.clone(); wallM.color.set(0xc6cecb);
+    const cells = Array.from({ length: 6 }, () => rng() < 0.4 ? rand(0.5, 1) : 0), upDraw = (emit) => (g, W, Hh) => { g.fillStyle = emit ? '#000' : '#a9b0ae'; g.fillRect(0, 0, W, Hh);
+      for (let j = 0; j < 2; j++) for (let i = 0; i < 3; i++) { const c = cells[j * 3 + i], x = i * W / 3 + W / 3 * 0.2, y = j * Hh / 2 + Hh / 2 * 0.24; if (c) { g.globalAlpha = c; g.fillStyle = '#cfeee2'; g.fillRect(x, y, W / 3 * 0.6, Hh / 2 * 0.5); g.globalAlpha = 1; } else if (!emit) { g.fillStyle = '#1c262a'; g.fillRect(x, y, W / 3 * 0.6, Hh / 2 * 0.5); }
+        if (!emit) { g.fillStyle = '#7d8583'; g.fillRect(x - 3, y + Hh / 2 * 0.5, W / 3 * 0.6 + 6, 5); } }
+      if (!emit) for (let i = 0; i < 200; i++) { g.fillStyle = `rgba(30,40,36,${rng() * 0.08})`; g.fillRect(rng() * W, rng() * Hh, 1 + rng() * 2, 4 + rng() * 30); } };
+    const upM = new THREE.MeshStandardMaterial({ map: repTex(upDraw(false)), emissiveMap: repTex(upDraw(true)), emissive: 0xffffff, emissiveIntensity: 0.7, roughness: 0.8, metalness: 0 });
+    const lino = new THREE.MeshStandardMaterial({ roughness: 0.32, metalness: 0, map: repTex((g, W, Hh) => { for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) { g.fillStyle = (i + j) % 2 ? '#8fa39a' : '#b9c2b4'; g.fillRect(i * W / 4, j * Hh / 4, W / 4, Hh / 4); } for (let i = 0; i < 400; i++) { g.fillStyle = `rgba(20,24,20,${rng() * 0.12})`; g.fillRect(rng() * W, rng() * Hh, 2 + rng() * 10, 1 + rng() * 3); } }) });
+    const white = new THREE.MeshStandardMaterial({ color: 0xd9dcd6, roughness: 0.9 }), sheet = new THREE.MeshStandardMaterial({ color: 0x4f8f7c, roughness: 0.95 }), curtain = new THREE.MeshStandardMaterial({ color: 0x86b0a2, roughness: 1, side: THREE.DoubleSide }), ceilM = new THREE.MeshStandardMaterial({ color: 0x8e9692, roughness: 1 });
+    const tube = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 1.9, 1.7) }), green = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.2, 2.6, 0.9) });
+    const blood = new THREE.MeshStandardMaterial({ transparent: true, depthWrite: false, roughness: 0.25, polygonOffset: true, polygonOffsetFactor: -2, map: canvasTex(256, 256, (g, W, Hh) => { for (let i = 0; i < 26; i++) { const x = W / 2 + rand(-70, 70), y = Hh / 2 + rand(-70, 70), r = rand(6, 44); const gr = g.createRadialGradient(x, y, 1, x, y, r); gr.addColorStop(0, 'rgba(70,4,4,0.9)'); gr.addColorStop(0.7, 'rgba(50,2,2,0.7)'); gr.addColorStop(1, 'rgba(40,0,0,0)'); g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); } }) });
+    const seg = (xa, xb, za, zb, nx, nz) => { B(blk, wallM, xb - xa, FH, zb - za, (xa + xb) / 2, FH / 2, (za + zb) / 2); addCollider(xa, xb, za, zb, true, H + 0.3);
+      const len = Math.max(xb - xa, zb - za), n = Math.floor(len / 3.4); for (let k = 0; k < n; k++) { const u = (k + 0.5) / n, px = nx ? (nx > 0 ? xb : xa) + nx * 0.03 : THREE.MathUtils.lerp(xa, xb, u), pz = nz ? (nz > 0 ? zb : za) + nz * 0.03 : THREE.MathUtils.lerp(za, zb, u); B(blk, rng() < 0.6 ? lobby : M.winDark, nx ? 0.05 : 1.7, 1.3, nz ? 0.05 : 1.7, px, 1.9, pz, { shadow: false }); } };
+    seg(bx - T, bx, az, bz, 1, 0); seg(ax, ax + T, az, cz - door / 2, -1, 0); seg(ax, ax + T, cz + door / 2, bz, -1, 0);
+    seg(ax + T, cx - door / 2, bz - T, bz, 0, 1); seg(cx + door / 2, bx - T, bz - T, bz, 0, 1); seg(ax + T, cx - door / 2, az, az + T, 0, -1); seg(cx + door / 2, bx - T, az, az + T, 0, -1);
+    B(blk, upM, w, H - FH, d, cx, (H + FH) / 2, cz, { tile: 6.8 }); B(blk, M.pave, w + 0.5, 0.3, d + 0.5, cx, H + 0.15, cz); B(blk, M.dark, w + 0.2, 0.25, d + 0.2, cx, FH + 0.1, cz);
+    B(blk, ceilM, w - T * 2, 0.1, d - T * 2, cx, FH - 0.05, cz, { shadow: false }); B(blk, lino, w - T, 0.03, d - T, cx, 0.015, cz, { shadow: false });
+    colliders.push({ minX: ax, maxX: bx, minZ: az, maxZ: bz, wall: false, roof: true, ceil: FH - 0.1, h: H + 0.3 });   // the roof: solid from above, hollow underneath
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) { const lx = ax + w * (i + 0.5) / 3, lz = az + d * (j + 0.5) / 3; B(blk, tube, 1.5, 0.05, 0.45, lx, FH - 0.13, lz, { shadow: false }); if ((i + j) % 2 === 0) lts.push(addLight(lx, 2.6, lz, 0xcff0e0, 24, 13, false)); }
+    const bed = (x, z, made = true) => { B(blk, M.steel, 2.1, 0.07, 1.0, x, 0.42, z); for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) B(blk, M.steel, 0.06, 0.4, 0.06, x + sx * 0.98, 0.2, z + sz * 0.44); B(blk, white, 2.0, 0.17, 0.92, x, 0.535, z); B(blk, white, 0.42, 0.1, 0.6, x + 0.72, 0.67, z); B(blk, M.steel, 0.05, 0.65, 1.0, x + 1.06, 0.72, z);
+      if (made) B(blk, sheet, 1.25, 0.05, 0.96, x - 0.35, 0.645, z); else B(blk, sheet, 0.5, 0.2, 0.8, x - 0.6, 0.16, z + 0.95, { ry: 0.5, rz: 0.2 }); addCollider(x - 1.05, x + 1.08, z - 0.5, z + 0.5, false, 0.62); };
+    const stand = (x, z) => { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.9, 6), M.steel); p.position.set(x, 0.95, z); blk.add(p); B(blk, M.steel, 0.4, 0.03, 0.4, x, 0.02, z); B(blk, white, 0.14, 0.24, 0.05, x + 0.12, 1.7, z); };
+    for (let k = 0; k < 5; k++) { const z = az + 3 + k * 4; bed(cx + 3, z, k !== 2); bed(bx - T - 1.2, z, rng() < 0.7); if (k < 4) { B(blk, curtain, 2.6, 2.1, 0.03, bx - T - 1.3, 1.45, z + 2, { shadow: false }); B(blk, M.steel, 2.7, 0.03, 0.03, bx - T - 1.3, 2.52, z + 2); } if (k % 2 === 0) stand(bx - T - 0.3, z + 0.8); }
+    const pb = new THREE.Vector3(cx + 3, 0.62, az + 3 + 2 * 4); stand(pb.x + 0.9, pb.z - 0.8);
+    B(blk, M.steel, 0.5, 0.9, 0.45, pb.x + 0.7, 0.45, pb.z + 0.85); B(blk, M.black, 0.42, 0.34, 0.3, pb.x + 0.7, 1.08, pb.z + 0.85); B(blk, green, 0.03, 0.22, 0.2, pb.x + 0.48, 1.08, pb.z + 0.85, { shadow: false });   // heart monitor
+    B(blk, M.planks, 0.9, 1.1, 4.4, ax + 4.2, 0.55, az + 4.2); B(blk, white, 1.0, 0.05, 4.5, ax + 4.2, 1.12, az + 4.2); addCollider(ax + 3.75, ax + 4.65, az + 2, az + 6.4, false, 1.15);   // reception desk
+    for (let k = 0; k < 4; k++) { B(blk, M.steel, 0.5, 0.45, 0.5, ax + 1.2, 0.23, bz - 2 - k * 0.7); B(blk, sheet, 0.5, 0.5, 0.06, ax + 0.95, 0.7, bz - 2 - k * 0.7); }   // waiting chairs
+    for (let k = 0; k < 7; k++) { const s = rand(1.2, 2.8), t = new THREE.Mesh(new THREE.PlaneGeometry(s, s), blood); t.rotation.x = -PI / 2; t.rotation.z = rng() * 6; t.position.set(rand(ax + 2, bx - 3), 0.036 + k * 0.001, rand(az + 2, bz - 2)); t.userData.shadow = false; blk.add(t); }
+    { const t = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 2.2), blood); t.rotation.y = -PI / 2; t.position.set(bx - T - 0.02, 1.5, cz + 6); t.userData.shadow = false; blk.add(t); }
+    const em = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 0.75), signMat(512, 88, (c, W, Hh) => drawBoxSign(c, W, Hh, '救急 EMERGENCY', '#c8102e', '#ffffff', false), 2)); em.rotation.y = -PI / 2; em.position.set(ax - 0.03, FH + 0.75, cz); em.userData.shadow = false; blk.add(em);
+    blade(ax, 7.2, cz + 6, -1, 0, '病院', '#f4f1e6', '#1f9d55', { parent: blk, w: 0.9, h: 3, light: 18, lights: lts }); lts.push(addLight(ax - 1.5, 2.4, cz, 0xff5040, 18, 11), addLight(cx, 2.4, bz + 1.5, 0xcff0e0, 16, 11));
+    B(blk, M.dark, 0.12, 4, 0.12, ax + 1, H + 2.3, cz); B(blk, green, 0.12, 2.6, 0.75, ax + 0.9, H + 3.4, cz, { shadow: false }); B(blk, green, 0.12, 0.75, 2.6, ax + 0.9, H + 3.4, cz, { shadow: false });   // rooftop green cross
+    B(blk, M.plate, 3, 1.4, 2.2, bx - 4, H + 1, az + 4); B(blk, M.concrete, 3.2, 2.6, 3.2, bx - 4, H + 1.6, bz - 4);
+    const bk = bakeBlock(blk, cx, cz), rec = { ...bk, kind: 'hospital', noFall: true, cols: colliders.slice(c0), lights: lts, home: bk.pivot.position.clone(), state: 0, t: 0, nx: 1, cone: null };
+    buildings.push(rec); lods.push({ near: bk.near, pivot: bk.pivot, x: cx, z: cz, r: 18, nearIn: true, pivIn: true });
+    hospital = { minX: ax, maxX: bx, minZ: az, maxZ: bz, ceil: FH - 0.1, h: H + 0.3, bed: pb, yaw: -PI / 2 };
+  }
   const XC = [], ZR = [];
   for (let k = 0; k < 4; k++) { XC.push([33 + k * 36, 57 + k * 36]); XC.unshift([-57 - k * 36, -33 - k * 36]); }
   for (let k = 0; k < 4; k++) ZR.unshift([-69 - k * 36, -45 - k * 36]); ZR.push([-33, -9], [0, 24]); for (let k = 0; k < 4; k++) ZR.push([36 + k * 36, 60 + k * 36]);
-  for (const [z0, z1] of ZR) for (const [x0, x1] of XC) genBlock(x0, x1, z0, z1);
+  for (const [z0, z1] of ZR) for (const [x0, x1] of XC) (x0 === 33 && z0 === 0 ? genHospital : genBlock)(x0, x1, z0, z1);
   for (const [z0, z1] of ZR) { if (z1 <= -45) genBlock(-21, 21, z0, z1); else if (z0 >= 36) { genBlock(-21, -6, z0, z1); genBlock(6, 21, z0, z1); } }
   if (Q.lambert) { const lc = new Map(), conv = (m) => { if (!m.isMeshStandardMaterial || m === gMat) return m; if (!lc.has(m.uuid)) lc.set(m.uuid, new THREE.MeshLambertMaterial({ map: m.map, color: m.color, emissive: m.emissive, emissiveMap: m.emissiveMap, emissiveIntensity: m.emissiveIntensity, transparent: m.transparent, opacity: m.opacity, side: m.side, depthWrite: m.depthWrite, polygonOffset: m.polygonOffset, polygonOffsetFactor: m.polygonOffsetFactor })); return lc.get(m.uuid); };
     scene.traverse(o => { if (o.isMesh && o !== ground) o.material = Array.isArray(o.material) ? o.material.map(conv) : conv(o.material); }); }
@@ -727,6 +767,6 @@ export async function buildWorld({ scene, renderer, manager, Q }) {
     if (flashT > 0) { flashT -= dt; const f = Math.max(0, Math.sin(flashT * 38) * 0.5 + 0.5) * Math.min(1, flashT * 4); moon.intensity = 0.55 + f * 7; scene.backgroundIntensity = 0.045 + f * 0.5; hemi.intensity = HEMI + f * 2.5; }
     else { moon.intensity = 0.55; scene.backgroundIntensity = 0.045; hemi.intensity = HEMI; }
   }
-  return { limits: { minX: -171, maxX: 171, minZ: -183, maxZ: 174 }, carPath: [[-8.6, -3.4], [-8.3, -1.6], [-6.4, -0.3], [-3.6, 1.2], [-1.2, 4.2], [0, 9], [0, 16], [0, 30], [0, 60], [0, 110]], buildings, car, carCol, moon, scrollSpots: [V(8.6, 6.75, -6), V(-8.6, 9.75, 7.5), V(8.6, 15.75, 4.5)], colliders, lights, steamPoints, update, ground, reflRT, bounds: { minX: -HW, maxX: HW, minZ: -24, maxZ: 21.6 }, onThunder: (cb) => { thunderCb = cb; }, flash: () => { nextFlash = 0; },
+  return { hospital, limits: { minX: -171, maxX: 171, minZ: -183, maxZ: 174 }, carPath: [[-8.6, -3.4], [-8.3, -1.6], [-6.4, -0.3], [-3.6, 1.2], [-1.2, 4.2], [0, 9], [0, 16], [0, 30], [0, 60], [0, 110]], buildings, car, carCol, moon, scrollSpots: [V(8.6, 6.75, -6), V(-8.6, 9.75, 7.5), V(8.6, 15.75, 4.5)], colliders, lights, steamPoints, update, ground, reflRT, bounds: { minX: -HW, maxX: HW, minZ: -24, maxZ: 21.6 }, onThunder: (cb) => { thunderCb = cb; }, flash: () => { nextFlash = 0; },
     setReflSize: (w, h) => { if (Q.refl > 0) reflRT.setSize(Math.max(64, Math.round(w * Q.refl)), Math.max(64, Math.round(h * Q.refl))); } };
 }
