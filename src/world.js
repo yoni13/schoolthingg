@@ -1,5 +1,6 @@
 // The alley: modular photoscanned facades, wet reflective ground, neon, props and lighting.
 import * as THREE from 'three';
+import { buildHospital } from './hospital.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { Reflector } from 'three/addons/objects/Reflector.js';
@@ -12,13 +13,14 @@ function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Ma
 const PROPS = ['WetFloorSign_01', 'Barrel_01', 'cardboard_box_01', 'covered_car', 'concrete_road_barrier', 'hand_truck', 'exterior_aircon_unit', 'fire_hydrant',
   'korean_public_payphone_01', 'industrial_wall_lamp', 'metal_trash_can', 'old_tyre', 'plastic_crate_01', 'potted_plant_02', 'plastic_monobloc_chair_01', 'propane_tank',
   'power_box_01', 'rollershutter_door', 'rollershutter_window_01', 'security_camera_01', 'trashbag', 'utility_box_01', 'water_manhole_cover', 'wooden_crate_02',
-  'modular_urban_apartments_facade'];
+  'modular_urban_apartments_facade', 'old_bed_frame', 'wheelchair_01', 'metal_office_desk', 'medical_box', 'fire_alarm', 'wall_clock', 'korean_fire_extinguisher_01', 'vintage_crutches_01',
+  'metal_stool_01', 'worn_metal_rack', 'tool_cart', 'modern_arm_chair_01', 'classic_laptop', 'clipboard', 'drawer_cabinet', 'industrial_storage_cart'];
 
 export async function buildWorld({ scene, renderer, manager, Q }) {
   const rng = mulberry(20241), rand = (a, b) => a + rng() * (b - a), pick = (arr) => arr[Math.floor(rng() * arr.length)];
   const colliders = [], lights = [], steamPoints = [], tickers = [];
   const stat = new THREE.Group(); scene.add(stat);           // everything static: merged per material at the end
-  const maxAniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  const maxAniso = Math.min(Q.msaa ? 16 : 8, renderer.capabilities.getMaxAnisotropy());
 
   // ---------------------------------------------------------------- loading
   const gl = new GLTFLoader(manager), tl = new THREE.TextureLoader(manager);
@@ -596,7 +598,7 @@ export async function buildWorld({ scene, renderer, manager, Q }) {
     return g;
   }
   // ---------------------------------------------------------------- other building types (all merged into the block's "far" mesh: a handful of draw calls each)
-  const repTex = (draw) => { const t = canvasTex(256, 256, draw); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t; };
+  const repTex = (draw) => { const t = canvasTex(512, 512, draw); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t; };
   const towerMats = [['#0a121c', '#9fd0ff', '#ffe2a8'], ['#14100c', '#ffd9a0', '#fff1d8'], ['#081513', '#8ff0d8', '#d8f4ff']].map(([bg, c1, c2]) => {   // curtain wall: 8 bays x 4 floors per 12 m tile
     const cells = Array.from({ length: 32 }, () => rng() < 0.3 ? [rng() < 0.5 ? c1 : c2, rand(0.45, 1)] : null), nx = 8, ny = 4;
     const draw = (emit) => (g, W, H) => { const cw = W / nx, ch = H / ny; g.fillStyle = emit ? '#000' : bg; g.fillRect(0, 0, W, H);
@@ -694,44 +696,8 @@ export async function buildWorld({ scene, renderer, manager, Q }) {
   }
   // ---------------------------------------------------------------- the hospital: three storeys, with a ground-floor ward you can walk into (the game starts in one of its beds)
   let hospital = null;
-  function genHospital(x0, x1, z0, z1) {
-    const blk = new THREE.Group(), lts = [], c0 = colliders.length, ax = x0 + 1, bx = x1 - 1, az = z0 + 1, bz = z1 - 1, w = bx - ax, d = bz - az, cx = (ax + bx) / 2, cz = (az + bz) / 2, T = 0.4, FH = 3.4, H = FH * 3, door = 5;
-    const wallM = M.plaster.clone(); wallM.color.set(0xc6cecb);
-    const cells = Array.from({ length: 6 }, () => rng() < 0.4 ? rand(0.5, 1) : 0), upDraw = (emit) => (g, W, Hh) => { g.fillStyle = emit ? '#000' : '#a9b0ae'; g.fillRect(0, 0, W, Hh);
-      for (let j = 0; j < 2; j++) for (let i = 0; i < 3; i++) { const c = cells[j * 3 + i], x = i * W / 3 + W / 3 * 0.2, y = j * Hh / 2 + Hh / 2 * 0.24; if (c) { g.globalAlpha = c; g.fillStyle = '#cfeee2'; g.fillRect(x, y, W / 3 * 0.6, Hh / 2 * 0.5); g.globalAlpha = 1; } else if (!emit) { g.fillStyle = '#1c262a'; g.fillRect(x, y, W / 3 * 0.6, Hh / 2 * 0.5); }
-        if (!emit) { g.fillStyle = '#7d8583'; g.fillRect(x - 3, y + Hh / 2 * 0.5, W / 3 * 0.6 + 6, 5); } }
-      if (!emit) for (let i = 0; i < 200; i++) { g.fillStyle = `rgba(30,40,36,${rng() * 0.08})`; g.fillRect(rng() * W, rng() * Hh, 1 + rng() * 2, 4 + rng() * 30); } };
-    const upM = new THREE.MeshStandardMaterial({ map: repTex(upDraw(false)), emissiveMap: repTex(upDraw(true)), emissive: 0xffffff, emissiveIntensity: 0.7, roughness: 0.8, metalness: 0 });
-    const lino = new THREE.MeshStandardMaterial({ roughness: 0.32, metalness: 0, map: repTex((g, W, Hh) => { for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) { g.fillStyle = (i + j) % 2 ? '#8fa39a' : '#b9c2b4'; g.fillRect(i * W / 4, j * Hh / 4, W / 4, Hh / 4); } for (let i = 0; i < 400; i++) { g.fillStyle = `rgba(20,24,20,${rng() * 0.12})`; g.fillRect(rng() * W, rng() * Hh, 2 + rng() * 10, 1 + rng() * 3); } }) });
-    const white = new THREE.MeshStandardMaterial({ color: 0xd9dcd6, roughness: 0.9 }), sheet = new THREE.MeshStandardMaterial({ color: 0x4f8f7c, roughness: 0.95 }), curtain = new THREE.MeshStandardMaterial({ color: 0x86b0a2, roughness: 1, side: THREE.DoubleSide }), ceilM = new THREE.MeshStandardMaterial({ color: 0x8e9692, roughness: 1 });
-    const tube = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 1.9, 1.7) }), green = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.2, 2.6, 0.9) });
-    const blood = new THREE.MeshStandardMaterial({ transparent: true, depthWrite: false, roughness: 0.25, polygonOffset: true, polygonOffsetFactor: -2, map: canvasTex(256, 256, (g, W, Hh) => { for (let i = 0; i < 26; i++) { const x = W / 2 + rand(-70, 70), y = Hh / 2 + rand(-70, 70), r = rand(6, 44); const gr = g.createRadialGradient(x, y, 1, x, y, r); gr.addColorStop(0, 'rgba(70,4,4,0.9)'); gr.addColorStop(0.7, 'rgba(50,2,2,0.7)'); gr.addColorStop(1, 'rgba(40,0,0,0)'); g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); } }) });
-    const seg = (xa, xb, za, zb, nx, nz) => { B(blk, wallM, xb - xa, FH, zb - za, (xa + xb) / 2, FH / 2, (za + zb) / 2); addCollider(xa, xb, za, zb, true, H + 0.3);
-      const len = Math.max(xb - xa, zb - za), n = Math.floor(len / 3.4); for (let k = 0; k < n; k++) { const u = (k + 0.5) / n, px = nx ? (nx > 0 ? xb : xa) + nx * 0.03 : THREE.MathUtils.lerp(xa, xb, u), pz = nz ? (nz > 0 ? zb : za) + nz * 0.03 : THREE.MathUtils.lerp(za, zb, u); B(blk, rng() < 0.6 ? lobby : M.winDark, nx ? 0.05 : 1.7, 1.3, nz ? 0.05 : 1.7, px, 1.9, pz, { shadow: false }); } };
-    seg(bx - T, bx, az, bz, 1, 0); seg(ax, ax + T, az, cz - door / 2, -1, 0); seg(ax, ax + T, cz + door / 2, bz, -1, 0);
-    seg(ax + T, cx - door / 2, bz - T, bz, 0, 1); seg(cx + door / 2, bx - T, bz - T, bz, 0, 1); seg(ax + T, cx - door / 2, az, az + T, 0, -1); seg(cx + door / 2, bx - T, az, az + T, 0, -1);
-    B(blk, upM, w, H - FH, d, cx, (H + FH) / 2, cz, { tile: 6.8 }); B(blk, M.pave, w + 0.5, 0.3, d + 0.5, cx, H + 0.15, cz); B(blk, M.dark, w + 0.2, 0.25, d + 0.2, cx, FH + 0.1, cz);
-    B(blk, ceilM, w - T * 2, 0.1, d - T * 2, cx, FH - 0.05, cz, { shadow: false }); B(blk, lino, w - T, 0.03, d - T, cx, 0.015, cz, { shadow: false });
-    colliders.push({ minX: ax, maxX: bx, minZ: az, maxZ: bz, wall: false, roof: true, ceil: FH - 0.1, h: H + 0.3 });   // the roof: solid from above, hollow underneath
-    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) { const lx = ax + w * (i + 0.5) / 3, lz = az + d * (j + 0.5) / 3; B(blk, tube, 1.5, 0.05, 0.45, lx, FH - 0.13, lz, { shadow: false }); if ((i + j) % 2 === 0) lts.push(addLight(lx, 2.6, lz, 0xcff0e0, 24, 13, false)); }
-    const bed = (x, z, made = true) => { B(blk, M.steel, 2.1, 0.07, 1.0, x, 0.42, z); for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) B(blk, M.steel, 0.06, 0.4, 0.06, x + sx * 0.98, 0.2, z + sz * 0.44); B(blk, white, 2.0, 0.17, 0.92, x, 0.535, z); B(blk, white, 0.42, 0.1, 0.6, x + 0.72, 0.67, z); B(blk, M.steel, 0.05, 0.65, 1.0, x + 1.06, 0.72, z);
-      if (made) B(blk, sheet, 1.25, 0.05, 0.96, x - 0.35, 0.645, z); else B(blk, sheet, 0.5, 0.2, 0.8, x - 0.6, 0.16, z + 0.95, { ry: 0.5, rz: 0.2 }); addCollider(x - 1.05, x + 1.08, z - 0.5, z + 0.5, false, 0.62); };
-    const stand = (x, z) => { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.9, 6), M.steel); p.position.set(x, 0.95, z); blk.add(p); B(blk, M.steel, 0.4, 0.03, 0.4, x, 0.02, z); B(blk, white, 0.14, 0.24, 0.05, x + 0.12, 1.7, z); };
-    for (let k = 0; k < 5; k++) { const z = az + 3 + k * 4; bed(cx + 3, z, k !== 2); bed(bx - T - 1.2, z, rng() < 0.7); if (k < 4) { B(blk, curtain, 2.6, 2.1, 0.03, bx - T - 1.3, 1.45, z + 2, { shadow: false }); B(blk, M.steel, 2.7, 0.03, 0.03, bx - T - 1.3, 2.52, z + 2); } if (k % 2 === 0) stand(bx - T - 0.3, z + 0.8); }
-    const pb = new THREE.Vector3(cx + 3, 0.62, az + 3 + 2 * 4); stand(pb.x + 0.9, pb.z - 0.8);
-    B(blk, M.steel, 0.5, 0.9, 0.45, pb.x + 0.7, 0.45, pb.z + 0.85); B(blk, M.black, 0.42, 0.34, 0.3, pb.x + 0.7, 1.08, pb.z + 0.85); B(blk, green, 0.03, 0.22, 0.2, pb.x + 0.48, 1.08, pb.z + 0.85, { shadow: false });   // heart monitor
-    B(blk, M.planks, 0.9, 1.1, 4.4, ax + 4.2, 0.55, az + 4.2); B(blk, white, 1.0, 0.05, 4.5, ax + 4.2, 1.12, az + 4.2); addCollider(ax + 3.75, ax + 4.65, az + 2, az + 6.4, false, 1.15);   // reception desk
-    for (let k = 0; k < 4; k++) { B(blk, M.steel, 0.5, 0.45, 0.5, ax + 1.2, 0.23, bz - 2 - k * 0.7); B(blk, sheet, 0.5, 0.5, 0.06, ax + 0.95, 0.7, bz - 2 - k * 0.7); }   // waiting chairs
-    for (let k = 0; k < 7; k++) { const s = rand(1.2, 2.8), t = new THREE.Mesh(new THREE.PlaneGeometry(s, s), blood); t.rotation.x = -PI / 2; t.rotation.z = rng() * 6; t.position.set(rand(ax + 2, bx - 3), 0.036 + k * 0.001, rand(az + 2, bz - 2)); t.userData.shadow = false; blk.add(t); }
-    { const t = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 2.2), blood); t.rotation.y = -PI / 2; t.position.set(bx - T - 0.02, 1.5, cz + 6); t.userData.shadow = false; blk.add(t); }
-    const em = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 0.75), signMat(512, 88, (c, W, Hh) => drawBoxSign(c, W, Hh, '救急 EMERGENCY', '#c8102e', '#ffffff', false), 2)); em.rotation.y = -PI / 2; em.position.set(ax - 0.03, FH + 0.75, cz); em.userData.shadow = false; blk.add(em);
-    blade(ax, 7.2, cz + 6, -1, 0, '病院', '#f4f1e6', '#1f9d55', { parent: blk, w: 0.9, h: 3, light: 18, lights: lts }); lts.push(addLight(ax - 1.5, 2.4, cz, 0xff5040, 18, 11), addLight(cx, 2.4, bz + 1.5, 0xcff0e0, 16, 11));
-    B(blk, M.dark, 0.12, 4, 0.12, ax + 1, H + 2.3, cz); B(blk, green, 0.12, 2.6, 0.75, ax + 0.9, H + 3.4, cz, { shadow: false }); B(blk, green, 0.12, 0.75, 2.6, ax + 0.9, H + 3.4, cz, { shadow: false });   // rooftop green cross
-    B(blk, M.plate, 3, 1.4, 2.2, bx - 4, H + 1, az + 4); B(blk, M.concrete, 3.2, 2.6, 3.2, bx - 4, H + 1.6, bz - 4);
-    const bk = bakeBlock(blk, cx, cz), rec = { ...bk, kind: 'hospital', noFall: true, cols: colliders.slice(c0), lights: lts, home: bk.pivot.position.clone(), state: 0, t: 0, nx: 1, cone: null };
-    buildings.push(rec); lods.push({ near: bk.near, pivot: bk.pivot, x: cx, z: cz, r: 18, nearIn: true, pivIn: true });
-    hospital = { minX: ax, maxX: bx, minZ: az, maxZ: bz, ceil: FH - 0.1, h: H + 0.3, bed: pb, yaw: -PI / 2 };
-  }
+  const hctx = { M, B, prop, pbr, canvasTex, signMat, drawBoxSign, blade, addLight, colliders, rng, rand, pick, Q, FONT, scene, bakeBlock, buildings, lods };
+  function genHospital(x0, x1, z0, z1) { hospital = buildHospital(hctx, x0, x1, z0, z1); }
   const XC = [], ZR = [];
   for (let k = 0; k < 4; k++) { XC.push([33 + k * 36, 57 + k * 36]); XC.unshift([-57 - k * 36, -33 - k * 36]); }
   for (let k = 0; k < 4; k++) ZR.unshift([-69 - k * 36, -45 - k * 36]); ZR.push([-33, -9], [0, 24]); for (let k = 0; k < 4; k++) ZR.push([36 + k * 36, 60 + k * 36]);
@@ -748,12 +714,13 @@ export async function buildWorld({ scene, renderer, manager, Q }) {
   const pp0 = new THREE.Vector3(0, 0, 14), NEAR = Q.near || 46, FAR = Q.far || 135; let frame = 0;
   function update(dt, t, pp = pp0) {
     gUniforms.uTime.value = t;
+    if (hospital) hospital.update(dt, t, pp);
     for (const l of lods) { const d = Math.hypot(pp.x - l.x, pp.z - l.z) - l.r; if (l.near && (l.nearIn ? d > NEAR + 8 : d < NEAR)) { l.nearIn = !l.nearIn; l.nearIn ? l.pivot.add(l.near) : l.pivot.remove(l.near); } if (l.pivIn ? d > FAR + 10 : d < FAR) { l.pivIn = !l.pivIn; l.pivIn ? scene.add(l.pivot) : scene.remove(l.pivot); } }
     frame++; if (moon.castShadow) { moon.shadow.autoUpdate = false; if (frame % (Q.shEvery || 2) === 0) moon.shadow.needsUpdate = true; }
     for (const sp of lampSpots) if (sp.castShadow) { sp.shadow.autoUpdate = false; if (frame % 3 === 1 && sp.position.distanceTo(pp) < 60) sp.shadow.needsUpdate = true; }
     for (const b of buildings) if (b.cone) b.cone.visible = !b.state;
-    poolT -= dt; if (poolT <= 0) { poolT = 0.25; const near = spots.filter(s => s.intensity > 0.01).map(s => [s.position.distanceToSquared(pp), s]).sort((a, b) => a[0] - b[0]); for (let i = 0; i < POOL.length; i++) assigned[i] = near[i] ? near[i][1] : null; }
-    for (let i = 0; i < POOL.length; i++) { const L = POOL[i], sp = assigned[i]; if (!sp) { L.intensity = 0; continue; } L.position.copy(sp.position); L.color.copy(sp.color); L.distance = sp.distance; L.intensity = sp.intensity * THREE.MathUtils.clamp((50 - sp.position.distanceTo(pp)) / 12, 0, 1); }
+    poolT -= dt; if (poolT <= 0) { poolT = 0.25; const near = spots.filter(s => s.intensity > 0.01 && (!s.lv || (pp.y > s.lv[0] && pp.y < s.lv[1]))).map(s => [s.position.distanceToSquared(pp), s]).sort((a, b) => a[0] - b[0]); for (let i = 0; i < POOL.length; i++) assigned[i] = near[i] ? near[i][1] : null; }
+    for (let i = 0; i < POOL.length; i++) { const L = POOL[i], sp = assigned[i]; if (!sp) { L.intensity = 0; continue; } L.position.copy(sp.position); L.color.copy(sp.color); L.distance = sp.distance; L.intensity = sp.intensity * (1 - (sp.heroK || 0)) * THREE.MathUtils.clamp((50 - sp.position.distanceTo(pp)) / 12, 0, 1); }
     moon.target.position.set(Math.round(pp.x / 4) * 4, 0, Math.round(pp.z / 4) * 4); moon.position.copy(moon.target.position).add(moonOff);
     // flicker: bar sign buzzes, nook tube stutters, hero sign breathes
     const buzz = (Math.sin(t * 61) > -0.2 || Math.sin(t * 7.3) > 0.4) ? 1 : 0.25; neonBar.material.color.setScalar(2.4 * buzz);
