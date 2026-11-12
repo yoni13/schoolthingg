@@ -14,10 +14,10 @@ import { Rain, Particles } from './fx.js';
 // ============================================================================ setup
 const params = new URLSearchParams(location.search);
 const QUALITIES = {
-  low: { pr: 0.6, msaa: 0, ao: false, refl: 0, shadow: 512, shEvery: 4, rain: 1200, pool: 3, near: 26, far: 95, lite: true, thin: 0.8, maxZ: 10, zRefl: false, ghosts: false, lambert: true, cones: false },
-  medium: { pr: 0.8, msaa: 0, ao: false, refl: 0.35, reflSkip: true, shadow: 1024, shEvery: 3, rain: 2500, pool: 5, near: 32, far: 115, lite: true, thin: 0.5, maxZ: 14, zRefl: false, ghosts: true, lambert: true },
-  high: { pr: 1, msaa: 2, ao: false, refl: 0.5, shadow: 1024, shEvery: 2, rain: 5000, pool: 8, near: 46, thin: 0, maxZ: 20, zRefl: true, ghosts: true },
-  ultra: { pr: Math.min(devicePixelRatio, 1.5), msaa: 4, ao: true, refl: 0.75, reflMsaa: 4, shadow: 2048, shEvery: 1, rain: 9000, pool: 12, near: 56, thin: 0, maxZ: 24, zRefl: true, ghosts: true },
+  low: { pr: 0.6, msaa: 0, ao: false, refl: 0, shadow: 512, shEvery: 4, rain: 1200, pool: 3, near: 26, far: 95, lite: true, thin: 0.8, maxZ: 12, zRefl: false, ghosts: false, lambert: true, cones: false },
+  medium: { pr: 0.8, msaa: 0, ao: false, refl: 0.35, reflSkip: true, shadow: 1024, shEvery: 3, rain: 2500, pool: 5, near: 32, far: 115, lite: true, thin: 0.5, maxZ: 17, zRefl: false, ghosts: true, lambert: true },
+  high: { pr: 1, msaa: 2, ao: false, refl: 0.5, shadow: 1024, shEvery: 2, rain: 5000, pool: 8, near: 46, thin: 0, maxZ: 24, zRefl: true, ghosts: true },
+  ultra: { pr: Math.min(devicePixelRatio, 1.5), msaa: 4, ao: true, refl: 0.75, reflMsaa: 4, shadow: 2048, shEvery: 1, rain: 9000, pool: 12, near: 56, thin: 0, maxZ: 28, zRefl: true, ghosts: true },
 };
 const store = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
 const qName = params.get('q') || store('ns_quality') || 'high', Q = QUALITIES[qName] || QUALITIES.high;
@@ -383,12 +383,13 @@ function dissolveMat(src, uDis) {
 }
 function spawnZombie(type, x, z) {
   const T = ZTYPES[type], root = new THREE.Group(), model = cloneSkinned(soldier.scene), uDis = { value: 1 };
-  model.rotation.y = Math.PI; root.add(model); root.scale.setScalar(T.scale); root.position.set(x, 0, z); scene.add(root);
+  const W = wave - 1, elite = wave >= 4 && type !== 'titan' && type !== 'exploder' && Math.random() < Math.min(0.3, (wave - 3) * 0.06);   // the horde hardens every wave; elites glow white-hot
+  model.rotation.y = Math.PI; root.add(model); root.scale.setScalar(T.scale * (elite ? 1.12 : 1)); root.position.set(x, 0, z); scene.add(root);
   model.traverse(o => { if (!o.isMesh) return; o.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 280); o.frustumCulled = true; o.castShadow = true; if (!Q.zRefl) o.layers.set(3);
-    if (/visor/.test(o.name)) { o.material = dissolveMat(new THREE.MeshStandardMaterial({ color: 0x000000, emissive: T.eye, emissiveIntensity: 1.3, roughness: 0.3 }), uDis); }
+    if (/visor/.test(o.name)) { o.material = dissolveMat(new THREE.MeshStandardMaterial({ color: 0x000000, emissive: T.eye, emissiveIntensity: elite ? 4.5 : 1.3, roughness: 0.3 }), uDis); }
     else { o.material = dissolveMat(o.material, uDis); o.material.color.set(T.tint); o.material.roughness = 0.62; o.material.metalness = 0.25; o.material.envMapIntensity = 1.4; o.material.transparent = false; o.material.depthWrite = true; } });
   const mixer = new THREE.AnimationMixer(model), clip = soldier.animations.find(c => c.name === T.clip), act = mixer.clipAction(clip); act.play(); act.timeScale = T.ts; act.time = Math.random() * clip.duration;
-  const z0 = { type, T, root, model, mixer, act, b: bonesOf(model, Z_BONES), uDis, hp: T.hp, state: 'spawn', t: 0, vel: new THREE.Vector3(), yaw: Math.atan2(P.pos.x - x, P.pos.z - z), flinch: 0, seed: Math.random() * 100, orbit: Math.random() < 0.5 ? 1 : -1, groanT: rand(2, 8) };
+  const z0 = { type, T, root, model, mixer, act, b: bonesOf(model, Z_BONES), uDis, elite, hp: T.hp * (1 + W * 0.09) * (elite ? 1.8 : 1), dk: (1 + W * 0.07) * (elite ? 1.3 : 1), sk: Math.min(1.28, 1 + W * 0.035) * (elite ? 1.12 : 1), wk: Math.max(0.68, 1 - W * 0.04), state: 'spawn', t: 0, vel: new THREE.Vector3(), yaw: Math.atan2(P.pos.x - x, P.pos.z - z), flinch: 0, seed: Math.random() * 100, orbit: Math.random() < 0.5 ? 1 : -1, groanT: rand(2, 8) };
   armZombie(z0); zombies.push(z0); sparks.burst(v1.set(x, 0.1, z), 40, C_EMBER, { speed: 2.2, up: 4, life: 1.1, size: 0.05, gravity: -1.5 }); if (Math.hypot(x - P.pos.x, z - P.pos.z) < 30) SFX.rise();
   return z0;
 }
@@ -409,12 +410,12 @@ function poseZombie(z, dt, time) {
 }
 function damageZombie(z, dmg, dir, heavy = false, kind = '') {
   if (z.state === 'dead' || z.state === 'spawn') return false;
-  if (z.type === 'armored' && kind === 'shuriken') dmg *= 0.3; z.hp -= dmg; z.flinch = z.T.scale > 1.5 ? 0.25 : 1; z.vel.addScaledVector(dir, typeof heavy === 'number' ? heavy : heavy ? 7 : 4);
+  if (z.type === 'armored' && kind === 'shuriken') dmg *= 0.3; z.hp -= dmg; z.flinch = z.T.scale > 1.5 ? 0.25 : 1; z.vel.addScaledVector(dir, (typeof heavy === 'number' ? heavy : heavy ? 7 : 4) * (z.elite ? 0.5 : 1));
   const p = v1.copy(z.root.position); p.y = 1.25 * z.T.scale;
   sparks.burst(p, 16, C_SPARK, { speed: 5, up: 2, life: 0.45, size: 0.045, dir }); blobs.burst(p, 18, C_BLOOD, { speed: 3.2, up: 2.5, life: 0.9, size: 0.07, dir, alpha: 0.95 });
   P.hits++; P.hitT = 2.2; SFX.hit();
-  if (z.hp <= 0) { z.state = 'dead'; z.t = 0; for (const w of z.weapons || []) w.visible = false; z.act.timeScale = 0.15; kills++; waveKills++; P.kills++; if (z.type === 'exploder') { const ep = z.root.position.clone().setY(1); after(0.05, () => explodeAt(ep, 4.5, true)); } P.ult = Math.min(100, P.ult + 7); SFX.die(); sparks.burst(p, 50, C_EMBER, { speed: 2.5, up: 3, life: 1.3, size: 0.05, gravity: -1.2 }); }
-  else if (z.state !== 'attack' && z.state !== 'leap' && z.state !== 'fuse' && z.T.scale < 1.5) { z.state = 'stagger'; z.t = 0; }
+  if (z.hp <= 0) { z.state = 'dead'; z.t = 0; for (const w of z.weapons || []) w.visible = false; z.act.timeScale = 0.15; kills++; waveKills++; P.kills++; if (z.type === 'exploder') { const ep = z.root.position.clone().setY(1); after(0.05, () => explodeAt(ep, 4.5, true)); } P.ult = Math.min(100, P.ult + (z.elite ? 9 : 4.5)); SFX.die(); sparks.burst(p, 50, C_EMBER, { speed: 2.5, up: 3, life: 1.3, size: 0.05, gravity: -1.2 }); }
+  else if (z.state !== 'attack' && z.state !== 'leap' && z.state !== 'fuse' && z.T.scale < 1.5 && z.type !== 'brute' && z.type !== 'armored' && !(z.elite && z.state === 'windup')) { z.state = 'stagger'; z.t = 0; }
   return true;
 }
 function updateZombies(dt, time) {
@@ -425,21 +426,21 @@ function updateZombies(dt, time) {
     let move = 0;
     if (z.state === 'chase' && state === 'play' && (z.chk = (z.chk || 0) - dt) <= 0) { z.chk = 0.5; z.lost = P.pos.y > 2 || losClear(z.root.position.x, z.root.position.z, P.pos.x, P.pos.z) ? 0 : (z.lost || 0) + 0.5;
       if (z.lost > 3.5 || dist > 50) { const sp = spawnPoint(); if (sp) { z.root.position.set(sp[0], 0, sp[1]); z.state = 'spawn'; z.t = 0; z.uDis.value = 1; z.lost = 0; continue; } } }
-    if (z.state === 'chase' && !P.dead && (z.type === 'spitter' ? dist > 5 && dist < 30 : P.pos.y > 2.5 && dist < 22)) { z.spitT = (z.spitT ?? rand(1, 2.5)) - dt; if (z.spitT <= 0) { z.spitT = rand(2.2, 3.6); spit(z); } }
+    if (z.state === 'chase' && !P.dead && (z.type === 'spitter' ? dist > 5 && dist < 30 : P.pos.y > 2.5 && dist < 22)) { z.spitT = (z.spitT ?? rand(1, 2.5)) - dt; if (z.spitT <= 0) { z.spitT = rand(2.2, 3.6) * z.wk; spit(z); } }
     if (z.state === 'spawn') { z.uDis.value = 1 - clamp(z.t / 0.9, 0, 1); if (z.t > 0.95) { z.uDis.value = 0; z.state = 'chase'; } }
     else if (z.state === 'chase') { let aim = Math.atan2(dx, dz);
       if (z.type === 'imp' && dist < 6 && dist > reach) aim += z.orbit * (dist < 3 ? 1.35 : 0.8);                      // imps circle their prey before darting in
       z.yaw = angDamp(z.yaw, aim, z.type === 'imp' ? 10 : 5, dt); z.leapCd = (z.leapCd || 0) - dt;
       if (P.dead) move = 0;
       else if (z.type === 'exploder' && dist < 2.4 && P.pos.y < 2.5) { z.state = 'fuse'; z.t = 0; SFX.beep(); }
-      else if (z.type === 'leaper' && dist > 6 && dist < 17 && z.leapCd <= 0 && P.pos.y < 3) { z.state = 'leap'; z.t = 0; z.leapCd = rand(3.5, 5.5); z.from = z.root.position.clone(); z.to = P.pos.clone().setY(0).addScaledVector(v1.set(dx, 0, dz).normalize(), -0.9); sfxTone({ dur: 0.3, f0: 150, f1: 420, vol: 0.2, type: 'sawtooth' }); }
-      else if (dist < reach && P.pos.y < 1.8) { z.state = 'windup'; z.t = 0; } else move = z.type === 'spitter' && dist < 9 ? 0 : T.speed; }
+      else if (z.type === 'leaper' && dist > 6 && dist < 17 && z.leapCd <= 0 && P.pos.y < 3) { z.state = 'leap'; z.t = 0; z.leapCd = rand(3.5, 5.5) * z.wk; z.from = z.root.position.clone(); z.to = P.pos.clone().setY(0).addScaledVector(v1.set(dx, 0, dz).normalize(), -0.9); sfxTone({ dur: 0.3, f0: 150, f1: 420, vol: 0.2, type: 'sawtooth' }); }
+      else if (dist < reach && P.pos.y < 1.8) { z.state = 'windup'; z.t = 0; } else move = z.type === 'spitter' && dist < 9 ? 0 : T.speed * z.sk; }
     else if (z.state === 'fuse') { z.model.scale.setScalar(1 + Math.sin(z.t * 40) * 0.06); if (z.t > 0.6) { z.model.scale.setScalar(1); damageZombie(z, 9999, v1.set(0, 0, 0), 0, 'ult'); } }
     else if (z.state === 'leap') { const k = Math.min(1, z.t / 0.75); z.root.position.lerpVectors(z.from, z.to, k); z.root.position.y = Math.sin(k * Math.PI) * 3.2;
-      if (k >= 1) { z.root.position.y = 0; z.state = 'chase'; z.t = 0; spawnRing(z.root.position, ACID, 3, 0.3); if (dist < 2.4 && P.pos.y < 1.8) hurtPlayer(T.dmg, v1.set(dx / dist, 0, dz / dist)); } }
-    else if (z.state === 'windup') { z.yaw = angDamp(z.yaw, Math.atan2(dx, dz), 3, dt); if (z.t > (T.wind || 0.42)) { z.state = 'attack'; z.t = 0; z.struck = false; } }
-    else if (z.state === 'attack') { if (!z.struck && z.t > 0.08) { z.struck = true; if (T.slam) { spawnRing(z.root.position, GOLD, T.slam, 0.4); camShake = Math.max(camShake, 0.4); SFX.boom(); if (dist < T.slam && P.pos.y < 1.2) hurtPlayer(T.dmg, v1.set(dx / dist, 0, dz / dist)); } else if (dist < reach + 0.5 && P.pos.y < 1.4) hurtPlayer(T.dmg, v1.set(dx / dist, 0, dz / dist)); } if (z.t > (T.rec || 0.55)) { z.state = 'chase'; z.t = 0; if (z.type === 'imp') z.orbit = -z.orbit; } }
-    else if (z.state === 'stagger') { if (z.t > 0.38) { z.state = 'chase'; z.t = 0; } }
+      if (k >= 1) { z.root.position.y = 0; z.state = 'chase'; z.t = 0; spawnRing(z.root.position, ACID, 3, 0.3); if (dist < 2.4 && P.pos.y < 1.8) hurtPlayer(T.dmg * z.dk, v1.set(dx / dist, 0, dz / dist)); } }
+    else if (z.state === 'windup') { z.yaw = angDamp(z.yaw, Math.atan2(dx, dz), 3 / z.wk, dt); if (z.t > (T.wind || 0.42) * z.wk) { z.state = 'attack'; z.t = 0; z.struck = false; } }
+    else if (z.state === 'attack') { if (!z.struck && z.t > 0.08) { z.struck = true; if (T.slam) { spawnRing(z.root.position, GOLD, T.slam, 0.4); camShake = Math.max(camShake, 0.4); SFX.boom(); if (dist < T.slam && P.pos.y < 1.2) hurtPlayer(T.dmg * z.dk, v1.set(dx / dist, 0, dz / dist)); } else if (dist < reach + 0.5 && P.pos.y < 1.4) hurtPlayer(T.dmg * z.dk, v1.set(dx / dist, 0, dz / dist)); } if (z.t > (T.rec || 0.55) * z.wk) { z.state = 'chase'; z.t = 0; if (z.type === 'imp') z.orbit = -z.orbit; } }
+    else if (z.state === 'stagger') { if (z.t > (z.elite ? 0.18 : 0.3)) { z.state = 'chase'; z.t = 0; } }
     else if (z.state === 'dead') { z.uDis.value = clamp(z.t / 1.25, 0, 1); z.model.rotation.x = -Math.min(z.t * 1.4, 1.15); z.model.position.y = -Math.min(z.t * 0.5, 0.35);
       if (Math.random() < dt * 40) sparks.emit(v1.set(z.root.position.x + rand(-0.3, 0.3), rand(0.2, 1.5), z.root.position.z + rand(-0.3, 0.3)), v2.set(rand(-0.4, 0.4), rand(0.6, 2), rand(-0.4, 0.4)), C_EMBER, rand(0.6, 1.4), 0.04, -1);
       if (z.t > 1.3) { scene.remove(z.root); z.model.traverse(o => { if (o.isMesh) o.material.dispose(); }); zombies.splice(i, 1); continue; } }
@@ -759,7 +760,7 @@ function resetEscape() { phase = 'fight'; cine = null; document.body.classList.r
 
 // ============================================================================ player update (ported)
 function hurtPlayer(dmg, dir) {
-  if (P.invuln > 0 || P.dead || P.ultState || phase === 'cine') return; P.hp -= dmg; P.invuln = 0.5; P.hurtFlash = 1; if (dir) P.vel.addScaledVector(dir, 9); camShake = Math.max(camShake, 0.5); SFX.hurt(); P.hits = 0;
+  if (P.invuln > 0 || P.dead || P.ultState || phase === 'cine') return; P.hp -= dmg; P.invuln = 0.32; P.hurtFlash = 1; if (dir) P.vel.addScaledVector(dir, 9); camShake = Math.max(camShake, 0.5); SFX.hurt(); P.hits = 0;
   blobs.burst(v2.copy(P.pos).setY(P.pos.y + 1.2), 10, C_BLOOD, { speed: 2.5, up: 2, life: 0.7, size: 0.06, alpha: 0.95 });
   if (P.hp <= 0) { P.hp = 0; P.dead = true; P.deadT = 0; P.wall = null; }
 }
@@ -770,7 +771,7 @@ function updatePlayer(dt) {
   for (const k in P.cd) P.cd[k] = Math.max(0, P.cd[k] - dt);
   P.atkCd -= dt; P.comboTimer -= dt; P.atkTimer -= dt; P.invuln -= dt; P.wallCd -= dt; P.hurtFlash = Math.max(0, P.hurtFlash - dt * 2.5); P.hitT -= dt; if (P.hitT <= 0) P.hits = 0;
   if (chronoT > 0) chronoT -= dt;
-  if (P.poison > 0 && !P.dead) { P.poison -= dt; P.hp -= 2.5 * dt; if (P.hp <= 0) { P.hp = 0; P.dead = true; P.deadT = 0; } }
+  if (P.poison > 0 && !P.dead) { P.poison -= dt; P.hp -= 4 * dt; if (P.hp <= 0) { P.hp = 0; P.dead = true; P.deadT = 0; } }
   if (P.dead) { P.vel.x = damp(P.vel.x, 0, 6, dt); P.vel.z = damp(P.vel.z, 0, 6, dt); P.vel.y -= GRAV * dt; P.pos.addScaledVector(P.vel, dt); const g = groundHeightAt(P.pos.x, P.pos.z, P.pos.y); if (P.pos.y <= g) { P.pos.y = g; P.vel.y = 0; P.onGround = true; } return; }
   if (P.queued && P.atkCd <= 0) trySlash();
   if (mouse.left && P.atkCd <= 0 && !P.queued) trySlash();
@@ -872,11 +873,11 @@ function titleCamera(time) { if (cam.fixed) return; const t = time * 0.045; came
 
 // ============================================================================ waves (kill goals, continuous spawning), HUD, flow
 const FINAL_WAVE = 9; let state = 'load', wave = 1, spawnTimer = 0, waveDelay = 0, gameTime = 0, bannerT = 0;
-const waveGoal = () => 8 + wave * 5;
+const waveGoal = () => 10 + wave * 6;
 function banner(big, small = '', dur = 2) { $('banner').innerHTML = `${big}<small>${small}</small>`; $('banner').style.opacity = 1; bannerT = dur; }
 function losClear(x0, z0, x1, z1) { const d = Math.hypot(x1 - x0, z1 - z0), n = Math.ceil(d / 0.8); for (let i = 1; i < n; i++) { const u = i / n; if (insideWall(x0 + (x1 - x0) * u, z0 + (z1 - z0) * u, 0.1)) return false; } return true; }
 function spawnPoint() {
-  for (let i = 0; i < 80; i++) { const a = Math.random() * 6.283, r = rand(11, 30), x = P.pos.x + Math.cos(a) * r, z = P.pos.z + Math.sin(a) * r;
+  for (let i = 0; i < 80; i++) { const a = Math.random() * 6.283, r = rand(9, 26), x = P.pos.x + Math.cos(a) * r, z = P.pos.z + Math.sin(a) * r;
     if (x > LIM.minX + 1 && x < LIM.maxX - 1 && z > LIM.minZ + 1 && z < LIM.maxZ - 1 && !blocked(x, z, 0.6) && (P.pos.y > 2 || i > 60 || losClear(x, z, P.pos.x, P.pos.z))) return [x, z]; }
   return null;
 }
@@ -892,11 +893,11 @@ function updateWaves(dt) {
     const NEWZ = { 2: 'RUNNERS · they sprint', 3: 'IMPS · small, fast, circling', 4: 'SPITTERS · bat the acid back', 5: 'BRUTES · heavy hitters', 6: 'EXPLODERS · kill them at range', 7: 'LEAPERS · they jump from afar', 8: 'ARMOURED · shuriken barely scratch them', 9: 'TITANS · stay out of reach' };
     after(unlockMsg ? 3.8 : 2.8, () => { if (phase === 'fight' && NEWZ[wave]) banner('NEW THREAT', NEWZ[wave], 2.6); });
     banner(wave === FINAL_WAVE ? 'FINAL WAVE' : `WAVE ${wave}`, unlockMsg || (wave === FINAL_WAVE ? 'survive — then escape' : wave >= 5 ? 'the ground is shaking...' : 'the horde grows stronger'), unlockMsg ? 3.5 : 2.5);
-    SFX.wave(); world.flash(); if (wave >= 5) collapseArm = 3.5; P.hp = Math.min(P.maxHp, P.hp + 25); return;
+    SFX.wave(); world.flash(); if (wave >= 5) collapseArm = 3.5; P.hp = Math.min(P.maxHp, P.hp + 12); return;
   }
-  const maxAlive = Math.min(6 + Math.round(wave * 1.6), Q.maxZ || 20); spawnTimer -= dt;
-  if (zombies.length < maxAlive && spawnTimer <= 0) { spawnTimer = Math.max(0.2, 0.9 - wave * 0.08);
-    const table = [['walker', 1], ['runner', wave >= 2 ? 0.5 : 0], ['imp', wave >= 3 ? (wave === 3 ? 0.9 : 0.5) : 0], ['spitter', wave >= 4 ? 0.3 : 0], ['brute', wave >= 5 ? 0.15 : 0], ['exploder', wave >= 6 ? 0.3 : 0], ['leaper', wave >= 7 ? 0.35 : 0], ['armored', wave >= 8 ? 0.2 : 0], ['titan', wave >= 9 && zombies.filter(q => q.type === 'titan').length < 2 ? 0.1 : 0]]; let roll = Math.random() * table.reduce((a, b) => a + b[1], 0), type = 'walker';
+  const maxAlive = Math.min(8 + wave * 2, Q.maxZ || 20); spawnTimer -= dt;
+  if (zombies.length < maxAlive && spawnTimer <= 0) { spawnTimer = Math.max(0.14, 0.7 - wave * 0.07);
+    const table = [['walker', 1], ['runner', wave >= 2 ? 0.6 : 0], ['imp', wave >= 3 ? (wave === 3 ? 0.9 : 0.5) : 0], ['spitter', wave >= 4 ? 0.35 : 0], ['brute', wave >= 5 ? 0.15 + (wave - 5) * 0.03 : 0], ['exploder', wave >= 6 ? 0.35 : 0], ['leaper', wave >= 7 ? 0.4 : 0], ['armored', wave >= 8 ? 0.28 : 0], ['titan', wave >= 9 && zombies.filter(q => q.type === 'titan').length < 3 ? 0.14 : 0]]; let roll = Math.random() * table.reduce((a, b) => a + b[1], 0), type = 'walker';
     for (const [k, w] of table) if ((roll -= w) <= 0) { type = k; break; }
     const sp = spawnPoint(); if (sp) spawnZombie(type, sp[0], sp[1]); }
 }
