@@ -595,13 +595,92 @@ export async function buildWorld({ scene, renderer, manager, Q }) {
     for (let k = 0; k < Math.round(bays / 4); k++) { const lx = rand(1, bays * 3 - 1), sp = pick(STREET_PROPS); prop(sp[0], x + tx * lx + nx * 0.55, 0, z + tz * lx + nz * 0.55, { parent: blk, ry: rng() * 6, s: sp[1] }); }
     return g;
   }
+  // ---------------------------------------------------------------- other building types (all merged into the block's "far" mesh: a handful of draw calls each)
+  const repTex = (draw) => { const t = canvasTex(256, 256, draw); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t; };
+  const towerMats = [['#0a121c', '#9fd0ff', '#ffe2a8'], ['#14100c', '#ffd9a0', '#fff1d8'], ['#081513', '#8ff0d8', '#d8f4ff']].map(([bg, c1, c2]) => {   // curtain wall: 8 bays x 4 floors per 12 m tile
+    const cells = Array.from({ length: 32 }, () => rng() < 0.3 ? [rng() < 0.5 ? c1 : c2, rand(0.45, 1)] : null), nx = 8, ny = 4;
+    const draw = (emit) => (g, W, H) => { const cw = W / nx, ch = H / ny; g.fillStyle = emit ? '#000' : bg; g.fillRect(0, 0, W, H);
+      for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const c = cells[j * nx + i]; if (c) { g.globalAlpha = c[1]; g.fillStyle = c[0]; g.fillRect(i * cw + 2, j * ch + ch * 0.26, cw - 4, ch * 0.62); g.globalAlpha = 1; } else if (!emit) { g.fillStyle = 'rgba(70,100,130,0.28)'; g.fillRect(i * cw + 2, j * ch + ch * 0.26, cw - 4, ch * 0.62); } }
+      if (!emit) { g.fillStyle = '#20262e'; for (let j = 0; j < ny; j++) g.fillRect(0, j * ch, W, ch * 0.2); g.fillStyle = '#0c0f13'; for (let i = 0; i < nx; i++) g.fillRect(i * cw - 1, 0, 2, H); } };
+    return new THREE.MeshStandardMaterial({ map: repTex(draw(false)), emissiveMap: repTex(draw(true)), emissive: 0xffffff, emissiveIntensity: 0.75, roughness: 0.18, metalness: 0.75, envMapIntensity: 1.8 }); });
+  const glowWarm = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.7, 1.25, 0.7) }), lobby = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.85, 0.6, 0.32) }), glowCold = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 1.9, 2.3) }), glowRed = new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 0.25, 0.15) });
+  const torii = new THREE.MeshStandardMaterial({ color: 0xb02a1c, emissive: 0x2a0704, roughness: 0.5 }), gold = new THREE.MeshStandardMaterial({ color: 0xd8b060, roughness: 0.3, metalness: 1 });
+  const shoji = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.8, 0.8, 0.8), map: repTex((g, W, H) => { const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, '#ffdca0'); gr.addColorStop(1, '#c07a34'); g.fillStyle = gr; g.fillRect(0, 0, W, H); g.fillStyle = '#2a170a'; for (let i = 0; i < 4; i++) g.fillRect(i * W / 4 - 3, 0, 6, H); g.fillRect(0, 0, W, 8); g.fillRect(0, H - 8, W, 8); g.fillRect(0, H / 2 - 3, W, 6); }) });
+  const parkSign = signMat(128, 128, (c, W, H) => drawBoxSign(c, W, H, 'P', '#1b6fd0', '#ffffff', false), 2.2);
+  const stencil = new THREE.MeshStandardMaterial({ transparent: true, depthWrite: false, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -2, map: canvasTex(512, 256, (g, W, H) => { g.globalAlpha = 0.8; g.fillStyle = '#e8e4d8'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `900 150px ${FONT}`; g.fillText('倉庫', W / 2, H / 2);
+    for (let i = 0; i < 500; i++) g.clearRect(rng() * W, rng() * H, 2 + rng() * 5, 2 + rng() * 14); }) });
+  const face = (blk, x, z, ry) => { const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry; blk.add(g); return g; };
+  const ringOf = (cx, cz, w, d) => [[cx, cz + d / 2, w, 0], [cx, cz - d / 2, w, 0], [cx + w / 2, cz, d, 1], [cx - w / 2, cz, d, 1]];   // the four sides of a rectangle: [x, z, length, runsAlongZ]
+  const strip = (blk, mat, cx, cz, w, d, y, h, t) => { for (const [x, z, len, alongZ] of ringOf(cx, cz, w, d)) B(blk, mat, alongZ ? t : len, h, alongZ ? len : t, x, y, z, { shadow: false }); };
+  function hipGeo(w, d, h, tw, td) {   // hipped roof: w x d at the eaves, tw x td at the top
+    const a = [[-w / 2, 0, d / 2], [w / 2, 0, d / 2], [w / 2, 0, -d / 2], [-w / 2, 0, -d / 2]], b = [[-tw / 2, h, td / 2], [tw / 2, h, td / 2], [tw / 2, h, -td / 2], [-tw / 2, h, -td / 2]], P = [], U = [];
+    const quad = (p0, p1, p2, p3) => { const L = Math.hypot(p1[0] - p0[0], p1[2] - p0[2]), S = Math.hypot(p3[0] - p0[0], p3[1] - p0[1], p3[2] - p0[2]), L2 = Math.hypot(p2[0] - p3[0], p2[2] - p3[2]), o = (L - L2) / 2;
+      P.push(...p0, ...p1, ...p2, ...p0, ...p2, ...p3); U.push(0, 0, L / 2, 0, (o + L2) / 2, S / 2, 0, 0, (o + L2) / 2, S / 2, o / 2, S / 2); };
+    for (let i = 0; i < 4; i++) { const j = (i + 1) % 4; quad(a[i], a[j], b[j], b[i]); } quad(b[0], b[1], b[2], b[3]);
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2)); g.computeVertexNormals(); return g;
+  }
+  const BUILD = {
+    tower(blk, lts, x0, x1, z0, z1) {   // glass office tower on a tiled podium
+      const m = 1.2, w = x1 - x0 - m * 2, d = z1 - z0 - m * 2, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, podH = 6, H = podH + (9 + Math.floor(rng() * 5)) * 3, tw = w - 5, td = d - 5, mat = pick(towerMats);
+      B(blk, M.tileDark, w, podH, d, cx, podH / 2, cz); B(blk, M.pave, w + 0.5, 0.3, d + 0.5, cx, podH + 0.15, cz);
+      strip(blk, lobby, cx, cz, w + 0.06, d + 0.06, 1.7, 2.6, 0.04); for (const [x, z, len, az] of ringOf(cx, cz, w + 0.1, d + 0.1)) for (let k = 0; k <= Math.round(len / 4); k++) { const u = -len / 2 + k * len / Math.round(len / 4); B(blk, M.dark, az ? 0.14 : 0.5, 3.2, az ? 0.5 : 0.14, x + (az ? 0 : u), 1.6, z + (az ? u : 0)); }   // lit lobby behind dark fins
+      B(blk, mat, tw, H - podH, td, cx, (H + podH) / 2, cz, { tile: 12 }); B(blk, M.dark, tw + 0.4, 0.6, td + 0.4, cx, H + 0.3, cz);
+      B(blk, M.plate, tw * 0.4, 2.2, td * 0.4, cx + rand(-2, 2), H + 1.7, cz + rand(-2, 2)); const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.1, 8, 6), M.dark); mast.position.set(cx, H + 6.6, cz); blk.add(mast); B(blk, glowRed, 0.3, 0.3, 0.3, cx, H + 10.7, cz, { shadow: false });
+      for (const s of [1, -1]) { const si = Math.floor(rng() * SIGNS.length); blade(cx + s * w / 2, rand(3.6, 4.4), cz + rand(-4, 4), s, 0, '', SIGNS[si][1], '', { parent: blk, mat: signMats[si], light: 16, lights: lts }); lts.push(addLight(cx + rand(-4, 4), 2.2, cz + s * (d / 2 + 1.2), 0xffc890, 16, 11)); }
+      addCollider(cx - w / 2, cx + w / 2, cz - d / 2, cz + d / 2, true, podH + 0.3); addCollider(cx - tw / 2, cx + tw / 2, cz - td / 2, cz + td / 2, true, H + 0.6);
+    },
+    park(blk, lts, x0, x1, z0, z1) {   // multi-storey car park: open decks under cold tube light
+      const m = 1, w = x1 - x0 - m * 2, d = z1 - z0 - m * 2, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, L = 3 + Math.floor(rng() * 3), H = L * 3;
+      B(blk, M.black, w - 1.4, H - 0.2, d - 1.4, cx, H / 2, cz);
+      for (let l = 0; l < L; l++) { B(blk, M.concrete, w, 0.45, d, cx, l * 3 + 2.78, cz); strip(blk, M.concrete, cx, cz, w - 0.2, d - 0.2, l * 3 + 0.55, 1.1, 0.2); strip(blk, glowCold, cx, cz, w - 1.2, d - 1.2, l * 3 + 2.48, 0.07, 0.1); }
+      for (const [x, z, len, az] of ringOf(cx, cz, w - 0.5, d - 0.5)) for (let k = 0; k <= Math.round(len / 5.5); k++) { const u = -len / 2 + k * len / Math.round(len / 5.5); B(blk, M.concrete, 0.55, H, 0.55, x + (az ? 0 : u), H / 2, z + (az ? u : 0)); }
+      B(blk, M.concrete, 4.5, 2.8, 4.5, cx + w / 2 - 3.2, H + 1.4, cz - d / 2 + 3.2); B(blk, glowCold, 1.2, 2.1, 0.06, cx + w / 2 - 3.2, H + 1.1, cz - d / 2 + 5.48, { shadow: false });   // stair core
+      for (let k = 0; k < 2; k++) prop('covered_car', cx - w / 4 + k * 5.5, H, cz + rand(-2, 4), { parent: blk, ry: rand(-0.2, 0.2) + (k ? PI : 0) });
+      const s = rng() < 0.5 ? 1 : -1; blade(cx + s * w / 2, H - 1.6, cz + rand(-5, 5), s, 0, '', '#1b6fd0', '', { parent: blk, mat: parkSign, w: 1.5, h: 1.5, light: 18, lights: lts });
+      lts.push(addLight(cx, 2.2, cz + d / 2 + 0.8, 0xbfe0ff, 20, 12), addLight(cx, 2.2, cz - d / 2 - 0.8, 0xbfe0ff, 20, 12));
+      addCollider(cx - w / 2, cx + w / 2, cz - d / 2, cz + d / 2, true, H + 0.02); addCollider(cx + w / 2 - 5.45, cx + w / 2 - 0.95, cz - d / 2 + 0.95, cz - d / 2 + 5.45, true, H + 2.8);
+    },
+    depot(blk, lts, x0, x1, z0, z1) {   // corrugated-iron warehouse with loading doors
+      const m = 1, w = x1 - x0 - m * 2, d = z1 - z0 - m * 2, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, H = rand(8, 11), mw = w * 0.36;
+      B(blk, M.iron, w, H, d, cx, H / 2, cz, { tile: 3 }); B(blk, M.concrete, w + 0.16, 1.3, d + 0.16, cx, 0.65, cz); B(blk, M.rust, w + 0.5, 0.22, d + 0.5, cx, H + 0.11, cz);
+      B(blk, M.iron, mw, 1.5, d - 4, cx, H + 0.95, cz, { tile: 3 }); B(blk, M.rust, mw + 0.6, 0.16, d - 3.4, cx, H + 1.78, cz); for (const s of [1, -1]) B(blk, glowWarm, 0.05, 0.7, d - 5, cx + s * (mw / 2 + 0.03), H + 1.05, cz, { shadow: false });   // roof monitor with lit clerestory
+      for (let k = 0; k < 2; k++) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, 6.5, 14), M.rust); c.position.set(cx + (k ? 1 : -1) * w * 0.34, H + 3.2, cz + rand(-d / 3, d / 3)); blk.add(c); }
+      for (const [fx, fz, ry, len] of [[cx - w / 2, cz + d / 2, 0, w], [cx + w / 2, cz - d / 2, PI, w]]) { const g = face(blk, fx, fz, ry), n = len > 30 ? 3 : 2;
+        for (let k = 0; k < n; k++) { const lx = len * (k + 0.5) / n; bigShutter(g, lx, 4.4, 4.2, rng() < 0.4); B(g, glowWarm, 0.5, 0.14, 0.2, lx, 5.2, 0.2, { shadow: false }); B(g, M.dark, 0.7, 0.1, 0.5, lx, 5.32, 0.25); }
+        const t = new THREE.Mesh(new THREE.PlaneGeometry(5, 2.5), stencil); t.position.set(len / 2, H - 2.2, 0.03); t.userData.shadow = false; g.add(t);
+        const nz = Math.cos(ry); lts.push(addLight(cx, 4.6, fz + nz * 1.2, 0xffc890, 22, 12));
+        for (let k = 0; k < 3; k++) prop(pick(['wooden_crate_02', 'Barrel_01', 'plastic_crate_01', 'cardboard_box_01']), cx + rand(-w / 2 + 1, w / 2 - 1), 0, fz + nz * rand(0.6, 0.9), { parent: blk, ry: rng() * 6 }); }
+      addCollider(cx - w / 2, cx + w / 2, cz - d / 2, cz + d / 2, true, H + 0.22); addCollider(cx - mw / 2 - 0.3, cx + mw / 2 + 0.3, cz - d / 2 + 1.7, cz + d / 2 - 1.7, true, H + 1.86);
+    },
+    shrine(blk, lts, x0, x1, z0, z1) {   // walled shrine: torii, stone lanterns, three-tier pagoda
+      const m = 1, w = x1 - x0 - m * 2, d = z1 - z0 - m * 2, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, S = Math.min(w, d) * 0.44, gate = 5;
+      for (const [x, z, len, az] of ringOf(cx, cz, w, d)) for (const s of [1, -1]) { const seg = az ? len : (len - gate) / 2, u = az ? 0 : s * (gate / 2 + seg / 2); if (az && s < 0) continue;   // perimeter wall, gated north and south
+        B(blk, M.plaster, az ? 0.5 : seg, 2.3, az ? seg : 0.5, x + u, 1.15, z); B(blk, M.roof, az ? 1 : seg + 0.2, 0.28, az ? seg + 0.2 : 1, x + u, 2.44, z);
+        addCollider(x + u - (az ? 0.3 : seg / 2), x + u + (az ? 0.3 : seg / 2), z - (az ? seg / 2 : 0.3), z + (az ? seg / 2 : 0.3), true, 2.58); }
+      for (const s of [1, -1]) { const tz = cz + s * (d / 2 + 0.2);   // torii at each gate
+        for (const q of [1, -1]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.3, 5.2, 12), torii); p.position.set(cx + q * 2.1, 2.6, tz); blk.add(p); addCollider(cx + q * 2.1 - 0.3, cx + q * 2.1 + 0.3, tz - 0.3, tz + 0.3, true, 5.2); }
+        B(blk, torii, 6.6, 0.42, 0.55, cx, 5.25, tz); B(blk, M.dark, 7, 0.16, 0.7, cx, 5.54, tz); B(blk, torii, 5.2, 0.3, 0.3, cx, 4.2, tz);
+        B(blk, M.pave, 3, 0.06, d / 2 - S / 2, cx, 0.03, cz + s * (S / 2 + (d / 2 - S / 2) / 2), { shadow: false });
+        for (const q of [1, -1]) { const lx = cx + q * 2.4, lz = cz + s * (S / 2 + 2.6); B(blk, M.pave, 0.3, 1.2, 0.3, lx, 0.6, lz); B(blk, glowWarm, 0.42, 0.42, 0.42, lx, 1.42, lz, { shadow: false }); B(blk, M.pave, 0.75, 0.14, 0.75, lx, 1.7, lz); if (q > 0) lts.push(addLight(lx - 2.4, 1.6, lz, 0xffb060, 14, 9)); } }
+      B(blk, M.pave, S + 3, 0.6, S + 3, cx, 0.3, cz); addCollider(cx - S / 2 - 1.5, cx + S / 2 + 1.5, cz - S / 2 - 1.5, cz + S / 2 + 1.5, false, 0.6);
+      let y = 0.6; const K = [1, 0.72, 0.5];
+      K.forEach((k, i) => { const s = S * k, top = i < 2 ? S * K[i + 1] + 0.3 : 0.25, bh = 3.2, rh = i < 2 ? 1.5 : 2.6;
+        B(blk, M.cedar, s, bh, s, cx, y + bh / 2, cz); for (const [px, pz, len, az] of ringOf(cx, cz, s + 0.04, s + 0.04)) B(blk, shoji, az ? 0.03 : len, 1.6, az ? len : 0.03, px, y + bh * 0.52, pz, { shadow: false, tile: 1.6 }); for (const [px, pz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) B(blk, torii, 0.34, bh, 0.34, cx + px * s / 2, y + bh / 2, cz + pz * s / 2);
+        B(blk, M.dark, s + 3.2, 0.16, s + 3.2, cx, y + bh + 0.02, cz); const r = new THREE.Mesh(hipGeo(s + 3.4, s + 3.4, rh, top, top), M.roof); r.position.set(cx, y + bh + 0.1, cz); blk.add(r);
+        addCollider(cx - s / 2 - 0.4, cx + s / 2 + 0.4, cz - s / 2 - 0.4, cz + s / 2 + 0.4, true, y + bh + (i < 2 ? rh : rh * 0.5)); y += bh + rh; });
+      const fin = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.12, 3, 8), gold); fin.position.set(cx, y + 1.3, cz); blk.add(fin); lts.push(addLight(cx, 3, cz + S / 2 + 1.6, 0xffc070, 20, 12));
+      return { noFall: true };
+    },
+  };
+  const KINDS = ['apt', 'apt', 'apt', 'apt', 'apt', 'tower', 'tower', 'park', 'park', 'depot', 'depot', 'shrine'];
   function genBlock(x0, x1, z0, z1) {
-    const blk = new THREE.Group(), lts = [], w = x1 - x0, d = z1 - z0, fNS = 3 + Math.floor(rng() * 4), fEW = fNS + (rng() < 0.5 ? 1 : -1), dNS = Math.min(8, d / 2), dEW = Math.min(8, w / 2), c0 = colliders.length, wallB = pick(WALLS);
-    genSide(blk, lts, x0, z1, 0, Math.round(w / 3), fNS, wallB, dNS, 0.4); genSide(blk, lts, x1, z0, PI, Math.round(w / 3), fNS, wallB, dNS, 0.4);
-    genSide(blk, lts, x1, z1, PI / 2, Math.round(d / 3), fEW, wallB, dEW); genSide(blk, lts, x0, z0, -PI / 2, Math.round(d / 3), fEW, wallB, dEW);
+    const blk = new THREE.Group(), lts = [], w = x1 - x0, d = z1 - z0, fNS = 3 + Math.floor(rng() * 4), fEW = fNS + (rng() < 0.5 ? 1 : -1), dNS = Math.min(8, d / 2), dEW = Math.min(8, w / 2), c0 = colliders.length, wallB = pick(WALLS), kind = w >= 20 && d >= 20 ? pick(KINDS) : 'apt'; let extra = null;
+    if (kind === 'apt') { genSide(blk, lts, x0, z1, 0, Math.round(w / 3), fNS, wallB, dNS, 0.4); genSide(blk, lts, x1, z0, PI, Math.round(w / 3), fNS, wallB, dNS, 0.4);
+      genSide(blk, lts, x1, z1, PI / 2, Math.round(d / 3), fEW, wallB, dEW); genSide(blk, lts, x0, z0, -PI / 2, Math.round(d / 3), fEW, wallB, dEW); }
+    else extra = BUILD[kind](blk, lts, x0, x1, z0, z1);
     const cols = colliders.slice(c0);
     const pl = pole(x0 - 0.9, (z0 + z1) / 2 + rand(-6, 6), -1, pick([0xffc48a, 0xcfe0ff]), 170, false, { parent: blk, lite: true });
-    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, bk = bakeBlock(blk, cx, cz), rec = { ...bk, cols, lights: lts, home: bk.pivot.position.clone(), state: 0, t: 0, nx: rng() < 0.5 ? 1 : -1, cone: pl.cone };
+    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, bk = bakeBlock(blk, cx, cz), rec = { ...bk, kind, ...extra, cols, lights: lts, home: bk.pivot.position.clone(), state: 0, t: 0, nx: rng() < 0.5 ? 1 : -1, cone: pl.cone };
     if (Q.cones === false) { scene.remove(pl.cone); rec.cone = null; } else { bk.pivot.updateMatrixWorld(true); bk.pivot.attach(pl.cone); }
     buildings.push(rec); lods.push({ near: bk.near, pivot: bk.pivot, x: cx, z: cz, r: Math.hypot(w, d) / 2, nearIn: true, pivIn: true });
   }

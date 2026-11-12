@@ -671,7 +671,7 @@ function startCollapse(b) { if (!b || b.state) return; b.state = 1; b.t = 0; b.h
   const zn = b.zone = new THREE.Mesh(new THREE.PlaneGeometry(b.lz.maxX - b.lz.minX, b.lz.maxZ - b.lz.minZ), zoneMat.clone()); zn.rotation.x = -Math.PI / 2; zn.position.set((b.lz.minX + b.lz.maxX) / 2, 0.07, (b.lz.minZ + b.lz.maxZ) / 2); zn.layers.set(2); zn.userData.noAO = true; scene.add(zn);
   if (Math.hypot(cx - P.pos.x, cz - P.pos.z) < 80) banner('倒 壊', 'building coming down — stay out of the red zone', 2.2);
   sfxNoise({ dur: T_WARN + T_SINK + T_FALL, f0: 500, f1: 70, type: 'lowpass', vol: 0.55 }); sfxTone({ dur: T_WARN, f0: 46, f1: 34, vol: 0.5, type: 'sawtooth' }); }
-const canFall = (b) => !b.state && b.cols.length > 1 && Math.abs(b.home.x) > 25;   // never the buildings along the getaway route
+const canFall = (b) => !b.state && !b.noFall && b.cols.length > 1 && Math.abs(b.home.x) > 25;   // never the buildings along the getaway route
 function collapseSome() { const dist = (b) => Math.hypot(b.home.x - P.pos.x, b.home.z - P.pos.z), cand = world.buildings.filter(b => canFall(b) && dist(b) < 95).sort((a, b) => dist(a) - dist(b));
   if (!collapsed && cand.length) { startCollapse(cand[0]); return; }
   for (let n = 0; n < Math.min(wave >= 7 ? 2 : 1, cand.length); n++) { const i = Math.floor(Math.random() * Math.min(cand.length, 6)); startCollapse(cand.splice(i, 1)[0]); } }
