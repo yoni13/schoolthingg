@@ -27,10 +27,10 @@ export function createNinja({ gltf, katana, tex, envMapIntensity = 1.3 }) {
   // ------------------------------------------------------------------ materials
   const M = (o) => new THREE.MeshStandardMaterial({ envMapIntensity, ...o });
   const rep = (t, n) => { if (!t) return null; const c = t.clone(); c.wrapS = c.wrapT = THREE.RepeatWrapping; c.repeat.set(n, n); c.needsUpdate = true; return c; };
-  const cloth = M({ color: 0x1b1d24, roughness: 0.9, map: rep(tex.clothD, 9), normalMap: rep(tex.clothN, 9), normalScale: new THREE.Vector2(0.9, 0.9) });
-  const cloth2 = M({ color: 0x2a2d37, roughness: 0.85, map: rep(tex.clothD, 5), normalMap: rep(tex.clothN, 5) });
+  const cloth = M({ color: 0x2b2f3c, roughness: 0.9, map: rep(tex.clothD, 9), normalMap: rep(tex.clothN, 9), normalScale: new THREE.Vector2(0.9, 0.9) });
+  const cloth2 = M({ color: 0x353a48, roughness: 0.85, map: rep(tex.clothD, 5), normalMap: rep(tex.clothN, 5) });
   const leather = M({ color: 0x4a3a30, roughness: 0.6, map: rep(tex.leatherD, 2), normalMap: rep(tex.leatherN, 2), roughnessMap: rep(tex.leatherR, 2) });
-  const armor = M({ color: 0x23262d, roughness: 0.32, metalness: 0.92, envMapIntensity: envMapIntensity * 1.6 }), trim = M({ color: 0xb08a3a, metalness: 1, roughness: 0.3, envMapIntensity: envMapIntensity * 1.6 });
+  const armor = M({ color: 0x3a3f4a, roughness: 0.3, metalness: 0.92, envMapIntensity: envMapIntensity * 1.6 }), trim = M({ color: 0xb08a3a, metalness: 1, roughness: 0.3, envMapIntensity: envMapIntensity * 1.6 });
   const red = M({ color: 0x8e1020, roughness: 0.75, map: rep(tex.clothD, 4), normalMap: rep(tex.clothN, 4) }), wrap = M({ color: 0x6a655e, roughness: 0.95, map: rep(tex.clothD, 6), normalMap: rep(tex.clothN, 6) });
   const eyeMat = M({ color: 0x0a1418, emissive: 0x6fd8ff, emissiveIntensity: 2.6, roughness: 0.2 });
   model.traverse(o => { if (!o.isMesh) return; o.castShadow = true; o.frustumCulled = false; o.material = /Joints/.test(o.material.name) ? armor : cloth; });
