@@ -1,0 +1,250 @@
+{
+  "asset": {
+    "generator": "Khronos glTF Blender I/O v1.6.16",
+    "version": "2.0"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "name": "Scene",
+      "nodes": [
+        0,
+        1
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "mesh": 0,
+      "name": "vintage_crutches_01_crutch01",
+      "rotation": [
+        -0.027619918808341026,
+        0.6650633215904236,
+        0.024627624079585075,
+        0.7458695769309998
+      ],
+      "translation": [
+        0.10432025045156479,
+        0,
+        0
+      ]
+    },
+    {
+      "mesh": 1,
+      "name": "vintage_crutches_01_crutch02",
+      "rotation": [
+        0.028396636247634888,
+        0.7583297491073608,
+        -0.03310835361480713,
+        0.6504102349281311
+      ],
+      "translation": [
+        0,
+        0,
+        -0.07995116710662842
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "doubleSided": true,
+      "name": "vintage_crutches_01",
+      "normalTexture": {
+        "index": 0
+      },
+      "pbrMetallicRoughness": {
+        "baseColorTexture": {
+          "index": 1
+        },
+        "metallicRoughnessTexture": {
+          "index": 2
+        }
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "name": "vintage_crutches_01_high_Old",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1,
+            "TEXCOORD_0": 2
+          },
+          "indices": 3,
+          "material": 0
+        }
+      ]
+    },
+    {
+      "name": "vintage_crutches_01_high_Old.001",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 4,
+            "NORMAL": 5,
+            "TEXCOORD_0": 6
+          },
+          "indices": 7,
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "textures": [
+    {
+      "sampler": 0,
+      "source": 0
+    },
+    {
+      "sampler": 0,
+      "source": 1
+    },
+    {
+      "sampler": 0,
+      "source": 2
+    }
+  ],
+  "images": [
+    {
+      "mimeType": "image/jpeg",
+      "name": "vintage_crutches_01_nor_gl",
+      "uri": "textures/vintage_crutches_01_nor_gl_1k.jpg"
+    },
+    {
+      "mimeType": "image/jpeg",
+      "name": "vintage_crutches_01_diff",
+      "uri": "textures/vintage_crutches_01_diff_1k.jpg"
+    },
+    {
+      "mimeType": "image/jpeg",
+      "name": "vintage_crutches_01_metallic-vintage_crutches_01_roughness",
+      "uri": "textures/vintage_crutches_01_arm_1k.jpg"
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 3262,
+      "max": [
+        0.042187727987766266,
+        1.5989567041397095,
+        0.11989828199148178
+      ],
+      "min": [
+        -0.042187727987766266,
+        -0.0010433202842250466,
+        -0.12036406993865967
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 3262,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 3262,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5123,
+      "count": 16044,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 3224,
+      "max": [
+        0.042187727987766266,
+        1.598973035812378,
+        0.11989828199148178
+      ],
+      "min": [
+        -0.042187727987766266,
+        -0.0010433309944346547,
+        -0.12036406993865967
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5126,
+      "count": 3224,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 3224,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5123,
+      "count": 15840,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteLength": 39144,
+      "byteOffset": 0
+    },
+    {
+      "buffer": 0,
+      "byteLength": 39144,
+      "byteOffset": 39144
+    },
+    {
+      "buffer": 0,
+      "byteLength": 26096,
+      "byteOffset": 78288
+    },
+    {
+      "buffer": 0,
+      "byteLength": 32088,
+      "byteOffset": 104384
+    },
+    {
+      "buffer": 0,
+      "byteLength": 38688,
+      "byteOffset": 136472
+    },
+    {
+      "buffer": 0,
+      "byteLength": 38688,
+      "byteOffset": 175160
+    },
+    {
+      "buffer": 0,
+      "byteLength": 25792,
+      "byteOffset": 213848
+    },
+    {
+      "buffer": 0,
+      "byteLength": 31680,
+      "byteOffset": 239640
+    }
+  ],
+  "samplers": [
+    {
+      "magFilter": 9729,
+      "minFilter": 9987
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 271320,
+      "uri": "vintage_crutches_01.bin"
+    }
+  ]
+}
