@@ -861,9 +861,11 @@ function animateNinja(dt, time) {
 const camPos = new THREE.Vector3(0, 5, 25); let camFov = 70;
 function updateCamera(dt) {
   if (cam.fixed) return; camPitch = clamp(camPitch, -0.35, 1.25);
-  const target = P.pos.clone().add(new THREE.Vector3(0, 1.7, 0)), back = new THREE.Vector3(Math.sin(camYaw) * Math.cos(camPitch), Math.sin(camPitch), Math.cos(camYaw) * Math.cos(camPitch));
+  const cl = ceilAt(P.pos.x, P.pos.z, P.pos.y - 0.6), target = P.pos.clone().add(new THREE.Vector3(0, 1.7, 0)); target.y = Math.min(target.y, cl - 0.45); const back = new THREE.Vector3(Math.sin(camYaw) * Math.cos(camPitch), Math.sin(camPitch), Math.cos(camYaw) * Math.cos(camPitch));
   let dist = 5.6; for (let s = 0.4; s <= 5.6; s += 0.15) if (camBlocked(target.x + back.x * s, target.y + back.y * s, target.z + back.z * s, 0.3)) { dist = Math.max(1.0, s - 0.35); break; }
-  const want = target.clone().addScaledVector(back, dist); want.y = Math.max(groundHeightAt(want.x, want.z, want.y) + 0.5, want.y);
+  const want = target.clone().addScaledVector(back, dist);
+  { const g = groundHeightAt(want.x, want.z, Math.min(want.y, target.y)); if (g <= target.y + 0.2) want.y = Math.max(g + 0.5, want.y); }   // stay above the ground the player could stand on — never hop onto wall tops or the storey above
+  want.y = Math.min(want.y, cl - 0.3, ceilAt(want.x, want.z, P.pos.y - 0.6) - 0.3);   // and under the ceiling
   camPos.lerp(want, 1 - Math.exp(-(P.ultState ? 8 : 20) * dt)); camera.position.copy(camPos);
   if (camShake > 0) { camera.position.add(new THREE.Vector3(rand(-1, 1), rand(-1, 1), rand(-1, 1)).multiplyScalar(camShake * 0.35)); camShake = Math.max(0, camShake - dt * 2.2); }
   camera.lookAt(target);
