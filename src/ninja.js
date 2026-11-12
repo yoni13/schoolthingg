@@ -10,9 +10,9 @@ const q1 = new THREE.Quaternion(), q2 = new THREE.Quaternion(), q3 = new THREE.Q
 // character space: +z forward, +y up, the right hand is on -x. R(right, up, forward) keeps the pose tables readable.
 const R = (r, u, f) => V(-r, u, f);
 
-function aimBone(bone, dirW, w = 1) {   // swing a bone (its +Y runs to its child) so that it points along a world direction
+function aimBone(bone, dirW, w = 1) {   // swing a bone so that the axis running to its child (userData.ax, measured from the rest pose) points along a world direction
   bone.parent.getWorldQuaternion(q1); bone.getWorldQuaternion(q2);
-  v1.set(0, 1, 0).applyQuaternion(q2); q3.setFromUnitVectors(v1, dirW).multiply(q2);
+  v1.copy(bone.userData.ax).applyQuaternion(q2); q3.setFromUnitVectors(v1, dirW).multiply(q2);
   q3.premultiply(q1.invert()); bone.quaternion.slerp(q3, w); bone.updateMatrixWorld(true);
 }
 function setWorldQuat(bone, qW, w = 1) { bone.parent.getWorldQuaternion(q1); q3.copy(q1.invert()).multiply(qW); bone.quaternion.slerp(q3, w); bone.updateMatrixWorld(true); }
@@ -36,10 +36,11 @@ export function createNinja({ gltf, katana, tex, envMapIntensity = 1.3 }) {
   model.traverse(o => { if (!o.isMesh) return; o.castShadow = true; o.frustumCulled = false; o.material = /Joints/.test(o.material.name) ? armor : cloth; });
 
   // ------------------------------------------------------------------ bind-pose measurements (T-pose, facing +z)
-  model.traverse(o => { if (o.isSkinnedMesh) o.skeleton.pose(); }); root.updateMatrixWorld(true);
+  root.updateMatrixWorld(true);   // the file's rest pose is the T-pose
   const wp = (b) => b.getWorldPosition(V()), bind = {}; for (const n in B) bind[n] = B[n].quaternion.clone();
   const J = {}; for (const n of ['Hips', 'Spine', 'Spine2', 'Neck', 'Head', 'HeadTop_End', 'LeftShoulder', 'RightShoulder', 'LeftArm', 'RightArm', 'LeftForeArm', 'RightForeArm', 'LeftHand', 'RightHand', 'LeftUpLeg', 'RightUpLeg', 'LeftLeg', 'RightLeg', 'LeftFoot', 'RightFoot']) J[n] = wp(B[n]);
   const armLen = { R: [J.RightArm.distanceTo(J.RightForeArm), J.RightForeArm.distanceTo(J.RightHand)], L: [J.LeftArm.distanceTo(J.LeftForeArm), J.LeftForeArm.distanceTo(J.LeftHand)] };
+  for (const [a, b] of [['LeftArm', 'LeftForeArm'], ['LeftForeArm', 'LeftHand'], ['RightArm', 'RightForeArm'], ['RightForeArm', 'RightHand'], ['LeftUpLeg', 'LeftLeg'], ['LeftLeg', 'LeftFoot'], ['RightUpLeg', 'RightLeg'], ['RightLeg', 'RightFoot']]) B[a].userData.ax = B[b].position.clone().normalize();
   const hipsRest = B.Hips.position.clone(), unit = B.Hips.getWorldScale(V()).y;   // bone-space units per metre (centimetres)
 
   // ------------------------------------------------------------------ armour + clothing, authored in T-pose space and attached to bones
@@ -53,20 +54,20 @@ export function createNinja({ gltf, katana, tex, envMapIntensity = 1.3 }) {
     mesh(cyl(0.123, 0.126, 0.042, 28, true), red, h.x, cy + 0.068, h.z + 0.012, hd, 0, 0, 0, [1, 1, 1.06]); mesh(box(0.062, 0.05, 0.012), trim, h.x, cy + 0.07, h.z + 0.146, hd); mesh(box(0.012, 0.085, 0.01), trim, h.x, cy + 0.11, h.z + 0.144, hd, 0, 0, 0.5); mesh(box(0.012, 0.085, 0.01), trim, h.x, cy + 0.11, h.z + 0.144, hd, 0, 0, -0.5);
     mesh(box(0.05, 0.03, 0.03), red, h.x, cy + 0.066, h.z - 0.125, hd);
     mesh(cyl(0.062, 0.075, 0.1, 18), cloth, J.Neck.x, J.Neck.y + 0.03, J.Neck.z, B.Neck); }
-  // torso: lamellar cuirass, collar, obi with a knot, scabbard across the back
-  { const c = J.Spine2, sp = B.Spine2;
-    for (let i = 0; i < 4; i++) mesh(box(0.3 - i * 0.022, 0.075, 0.03), armor, c.x, c.y + 0.1 - i * 0.068, c.z + 0.118 - i * 0.008, i < 2 ? sp : B.Spine1, -0.1 + i * 0.07);
-    for (let i = 0; i < 4; i++) mesh(box(0.012, 0.012, 0.012), trim, c.x + (i % 2 ? 0.1 : -0.1), c.y + 0.1 - Math.floor(i / 2) * 0.068, c.z + 0.136, sp);
-    for (let i = 0; i < 3; i++) mesh(box(0.28 - i * 0.02, 0.085, 0.028), armor, c.x, c.y + 0.08 - i * 0.08, c.z - 0.105, sp, 0.06);
-    mesh(box(0.05, 0.6, 0.02), leather, c.x, c.y + 0.0, c.z + 0.13, sp, 0, 0, 0.72); mesh(box(0.05, 0.6, 0.02), leather, c.x, c.y, c.z - 0.125, sp, 0, 0, -0.72);
-    const hp = J.Hips; mesh(cyl(0.158, 0.165, 0.11, 24), red, hp.x, hp.y + 0.075, hp.z, B.Hips, 0, 0, 0, [1, 1, 0.78]); mesh(box(0.1, 0.085, 0.05), red, hp.x - 0.07, hp.y + 0.075, hp.z + 0.125, B.Hips); mesh(box(0.045, 0.26, 0.016), red, hp.x - 0.09, hp.y - 0.07, hp.z + 0.135, B.Hips, 0, 0, 0.1); mesh(box(0.045, 0.2, 0.016), red, hp.x - 0.045, hp.y - 0.05, hp.z + 0.14, B.Hips, 0, 0, -0.12);
-    for (const s of [-1, 1]) { mesh(box(0.15, 0.24, 0.022), armor, hp.x + s * 0.115, hp.y - 0.12, hp.z + 0.085, s < 0 ? B.RightUpLeg : B.LeftUpLeg, -0.12, 0, 0); mesh(box(0.15, 0.03, 0.026), trim, hp.x + s * 0.115, hp.y - 0.235, hp.z + 0.1, s < 0 ? B.RightUpLeg : B.LeftUpLeg, -0.12); mesh(box(0.022, 0.24, 0.15), armor, hp.x + s * 0.185, hp.y - 0.12, hp.z, s < 0 ? B.RightUpLeg : B.LeftUpLeg, 0, 0, s * 0.1); }
-    mesh(cyl(0.021, 0.026, 0.86, 12), armor, c.x + 0.02, c.y + 0.02, c.z - 0.15, sp, 0, 0, -0.78); mesh(cyl(0.028, 0.028, 0.03, 12), trim, c.x - 0.27, c.y + 0.31, c.z - 0.15, sp, 0, 0, -0.78); mesh(cyl(0.027, 0.027, 0.05, 12), trim, c.x + 0.32, c.y - 0.285, c.z - 0.15, sp, 0, 0, -0.78); }
-  // limbs: layered shoulder guards, bracers, shin guards, wrapped ankles
-  for (const s of [-1, 1]) { const N = s < 0 ? 'Right' : 'Left', sh = J[N + 'Arm'], el = J[N + 'ForeArm'], ha = J[N + 'Hand'], kn = J[N + 'Leg'], ft = J[N + 'Foot'];
-    for (let i = 0; i < 3; i++) mesh(sph(0.082 - i * 0.004, 18, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), armor, sh.x + s * (0.01 + i * 0.05), sh.y + 0.022 - i * 0.012, sh.z, B[N + 'Arm'], 0, 0, -s * (0.25 + i * 0.3), [1.05, 0.7, 1.15]);
-    mesh(cyl(0.05, 0.043, 0.17, 14), leather, lerp(el.x, ha.x, 0.55), el.y, el.z, B[N + 'ForeArm'], 0, 0, Math.PI / 2); mesh(box(0.15, 0.022, 0.07), armor, lerp(el.x, ha.x, 0.55), el.y + 0.045, el.z, B[N + 'ForeArm']); mesh(cyl(0.046, 0.046, 0.02, 14), trim, lerp(el.x, ha.x, 0.9), el.y, el.z, B[N + 'ForeArm'], 0, 0, Math.PI / 2);
-    mesh(cyl(0.062, 0.05, 0.3, 14), wrap, kn.x, lerp(kn.y, ft.y, 0.5), kn.z, B[N + 'Leg']); mesh(box(0.085, 0.27, 0.03), armor, kn.x, lerp(kn.y, ft.y, 0.48), kn.z + 0.055, B[N + 'Leg'], 0.05); mesh(sph(0.058, 14, 10), armor, kn.x, kn.y + 0.005, kn.z + 0.045, B[N + 'Leg'], 0, 0, 0, [1, 1.15, 0.7]); }
+  // curved plate: a slice of a cylinder wall, centred on angle `at` (0 = front, PI = back), half-width `half` radians
+  const armorDS = armor.clone(); armorDS.side = THREE.DoubleSide; const trimDS = trim.clone(); trimDS.side = THREE.DoubleSide;
+  const arc = (rt, rb, h, at, half, mat, x, y, z, bone, sz = 1, rx = 0) => mesh(new THREE.CylinderGeometry(rt, rb, h, 14, 1, true, at - half, half * 2), mat, x, y, z, bone, rx, 0, 0, [1, 1, sz]);
+  // torso: lamellar cuirass front and back, obi with a knot, scabbard across the back
+  { const c = J.Spine2, sp = B.Spine2, hp = J.Hips;
+    for (let i = 0; i < 5; i++) { const y = c.y + 0.13 - i * 0.07, r = 0.19 - i * 0.008; arc(r + 0.004, r + 0.01, 0.084, 0, 1.2 - i * 0.03, armorDS, c.x, y, c.z + 0.0, i < 3 ? sp : B.Spine1, 0.9); arc(r - 0.004, r - 0.002, 0.084, Math.PI, 1.15, armorDS, c.x, y, c.z - 0.005, i < 3 ? sp : B.Spine1, 0.7); if (i < 4) arc(r + 0.013, r + 0.013, 0.01, 0, 1.15 - i * 0.03, trimDS, c.x, y - 0.04, c.z, i < 3 ? sp : B.Spine1, 0.9); }
+    mesh(cyl(0.166, 0.172, 0.105, 24), red, hp.x, hp.y + 0.085, hp.z, B.Hips, 0, 0, 0, [1, 1, 0.8]); mesh(box(0.085, 0.07, 0.04), red, hp.x - 0.06, hp.y + 0.085, hp.z + 0.135, B.Hips); mesh(box(0.04, 0.24, 0.012), red, hp.x - 0.08, hp.y - 0.05, hp.z + 0.142, B.Hips, 0.05, 0, 0.1); mesh(box(0.04, 0.18, 0.012), red, hp.x - 0.04, hp.y - 0.03, hp.z + 0.146, B.Hips, 0.05, 0, -0.12);
+    mesh(cyl(0.02, 0.024, 0.84, 12), armor, c.x + 0.02, c.y + 0.02, c.z - 0.165, sp, 0, 0, -0.78); }
+  // limbs: shoulder guards, bracers, tassets over the thighs, shin guards, wrapped calves
+  for (const s of [-1, 1]) { const N = s < 0 ? 'Right' : 'Left', sh = J[N + 'Arm'], el = J[N + 'ForeArm'], ha = J[N + 'Hand'], th = J[N + 'UpLeg'], kn = J[N + 'Leg'], ft = J[N + 'Foot'];
+    for (let i = 0; i < 2; i++) mesh(sph(0.09 - i * 0.008, 18, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), armor, sh.x + s * (0.0 + i * 0.065), sh.y + 0.03 - i * 0.02, sh.z, B[N + 'Arm'], 0, 0, -s * (0.2 + i * 0.45), [1.05, 0.62, 1.2]);
+    mesh(cyl(0.048, 0.041, 0.17, 14), leather, lerp(el.x, ha.x, 0.55), el.y, el.z, B[N + 'ForeArm'], 0, 0, Math.PI / 2); for (const u of [0.25, 0.86]) mesh(cyl(0.05 - u * 0.006, 0.05 - u * 0.006, 0.016, 14), trim, lerp(el.x, ha.x, u), el.y, el.z, B[N + 'ForeArm'], 0, 0, Math.PI / 2);
+    arc(0.1, 0.092, 0.24, s * 0.45, 1.15, armorDS, th.x, th.y - 0.13, th.z, B[N + 'UpLeg']); arc(0.094, 0.094, 0.016, s * 0.45, 1.15, trimDS, th.x, th.y - 0.245, th.z, B[N + 'UpLeg']);
+    mesh(cyl(0.058, 0.048, 0.3, 14), wrap, kn.x, lerp(kn.y, ft.y, 0.52), kn.z, B[N + 'Leg']); arc(0.066, 0.054, 0.29, 0, 1.2, armorDS, kn.x, lerp(kn.y, ft.y, 0.5), kn.z, B[N + 'Leg']); mesh(sph(0.056, 14, 10), armor, kn.x, kn.y + 0.005, kn.z + 0.04, B[N + 'Leg'], 0, 0, 0, [1, 1.15, 0.7]); }
 
   // ------------------------------------------------------------------ the katana (canonical frame: +Y to the tip, +Z the cutting edge, origin where the right hand grips)
   const sword = new THREE.Group(), SW = 1.18;
@@ -83,8 +84,8 @@ export function createNinja({ gltf, katana, tex, envMapIntensity = 1.3 }) {
     // closed fist: curl every finger joint towards the palm, wrap the thumb over
     const curlAxisW = V(0, 0, s === 'R' ? 1 : -1);
     for (const f of ['Index', 'Middle', 'Ring', 'Pinky']) for (let i = 1; i <= 3; i++) { const fb = B[(s === 'R' ? 'RightHand' : 'LeftHand') + f + i]; if (!fb) continue; const ax = curlAxisW.clone().applyQuaternion(fb.getWorldQuaternion(new THREE.Quaternion()).invert()); hands[s].fingers.push([fb, bind[fb.name.replace(/^mixamorig:?/, '')].clone().multiply(new THREE.Quaternion().setFromAxisAngle(ax, [1.15, 1.45, 1.0][i - 1]))]); }
-    for (let i = 1; i <= 3; i++) { const fb = B[(s === 'R' ? 'RightHand' : 'LeftHand') + 'Thumb' + i]; if (!fb) continue; const iqf = fb.getWorldQuaternion(new THREE.Quaternion()).invert(), a1 = V(s === 'R' ? -1 : 1, 0, 0).applyQuaternion(iqf), a2 = V(0, s === 'R' ? 1 : -1, 0).applyQuaternion(iqf);
-      hands[s].fingers.push([fb, bind[fb.name.replace(/^mixamorig:?/, '')].clone().multiply(new THREE.Quaternion().setFromAxisAngle(a1, i === 1 ? 0.55 : 0.5)).multiply(new THREE.Quaternion().setFromAxisAngle(a2, i === 1 ? 0.5 : 0.25))]); } }
+    for (let i = 1; i <= 3; i++) { const fb = B[(s === 'R' ? 'RightHand' : 'LeftHand') + 'Thumb' + i]; if (!fb) continue; const iqf = fb.getWorldQuaternion(new THREE.Quaternion()).invert(), a1 = V(1, 0, 0).applyQuaternion(iqf), a2 = V(0, s === 'R' ? 1 : -1, 0).applyQuaternion(iqf);
+      hands[s].fingers.push([fb, bind[fb.name.replace(/^mixamorig:?/, '')].clone().multiply(new THREE.Quaternion().setFromAxisAngle(a1, i === 1 ? 0.75 : 0.55)).multiply(new THREE.Quaternion().setFromAxisAngle(a2, i === 1 ? 0.25 : 0.1))]); } }
   root.add(sword);
 
   // ------------------------------------------------------------------ animation
@@ -131,7 +132,7 @@ export function createNinja({ gltf, katana, tex, envMapIntensity = 1.3 }) {
       else if (st.atk.combo === 2) { const th = lerp(-1.0, 2.15, e);   // men: straight down from overhead
         stance(R(0, 1.3 + 0.48 * Math.cos(th * 0.75), 0.16 + 0.34 * Math.sin(Math.max(0, th))), V(0, Math.cos(th), Math.sin(th)), V(0, -Math.sin(th), Math.cos(th)), 1); T.lean = lerp(-0.2, 0.45, e); T.crouch = 0.12 * e; }
       else { const sgn = st.atk.combo === 0 ? 1 : -1, ph = lerp(-2.0, 1.85, e) * sgn, rise = st.atk.combo === 0 ? lerp(1.5, 1.02, e) : lerp(0.98, 1.5, e), slope = (st.atk.combo === 0 ? -0.3 : 0.3);   // kesa / gyaku-kesa: a diagonal sweep across the front
-        stance(R(Math.sin(ph) * 0.34, rise, 0.1 + Math.cos(ph) * 0.3), R(Math.sin(ph * 1.2), slope * Math.cos(ph * 0.6), Math.cos(ph * 1.2)), R(Math.cos(ph) * sgn, slope, -Math.sin(ph) * sgn), 1); T.twist = -ph * 0.42; T.lean = 0.12; } }
+        stance(R(Math.sin(ph) * 0.44, rise, 0.1 + Math.cos(ph) * 0.44), R(Math.sin(ph * 1.2), slope * Math.cos(ph * 0.6), Math.cos(ph * 1.2)), R(Math.cos(ph) * sgn, slope, -Math.sin(ph) * sgn), 1); T.twist = -ph * 0.42; T.lean = 0.12; } }
     if (st.dash) { stance(R(0.2, 1.05, 0.5), R(-0.1, 0.05, 1), V(0, -1, 0.1), 1); bodyX = 0.55; T.lean = 0.3; setLegs(V(0, -0.65, 0.76), V(0, -0.9, -0.44), V(0, -0.8, -0.6), V(0, -0.6, -0.8), 1); T.snap = 1; }   // thrust
     if (st.storm) { spin = true; stance(R(0.6, 1.32, 0), R(1, 0.02, 0), V(0, 0, 1), 0); T.lfree = 1; T.lhand.copy(R(-0.62, 1.32, 0)); T.snap = 1; }
     if (st.wake != null) { const e = sstep(st.wake), a = 1.45 * e; bodyX = lerp(-1.5, 0.06, e); T.hips = lerp(0.22, 0.16, e); setLegs(V(0.06, -Math.cos(a), Math.sin(a)), V(0, -Math.cos(a) - 0.02, Math.sin(a)), V(-0.06, -Math.cos(a), Math.sin(a)), V(0, -Math.cos(a) - 0.02, Math.sin(a)), 1);

@@ -27,7 +27,7 @@ const $ = (id) => document.getElementById(id);
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Q.pr); renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.15;
-renderer.shadowMap.enabled = Q.shadow > 0; renderer.shadowMap.type = Q.msaa ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+renderer.shadowMap.enabled = Q.shadow > 0; renderer.shadowMap.type = Q.ao ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
 document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.08, 400); camera.layers.enable(2); camera.layers.enable(3);   // 2 = effects, 3 = fine building detail (neither is drawn into the ground reflection)
@@ -273,7 +273,6 @@ function updateVfx(dt) {
 
 // ============================================================================ the ninja (original rig and proportions, new materials)
 const ninja = createNinja({ gltf: xbot, katana: katanaGltf.scene, tex: { clothD, clothN, leatherD, leatherN, leatherR } }); scene.add(ninja.root);
-const rimLight = new THREE.PointLight(0x9fc8ff, 0, 7, 1.6); scene.add(rimLight);   // a cool kicker behind the hero, opposite the camera, so the dark suit always reads against the night
 const bladeTrail = new Trail(scene, new THREE.Color(0.35, 0.9, 1.0), 30);
 const SCARF_N = 12, scarf = { pts: [], prev: [] };
 for (let i = 0; i < SCARF_N; i++) { scarf.pts.push(new THREE.Vector3()); scarf.prev.push(new THREE.Vector3()); }
@@ -856,7 +855,6 @@ function animateNinja(dt, time) {
   if (P.throwAnim > 0) P.throwAnim -= dt;
   ninja.sword.updateMatrixWorld(true); if ((swing && !(P.throwAnim > 0)) || P.dash > 0 || P.storm > 0) bladeTrail.push(ninja.bladeBase(_bb), ninja.bladeTip(_bt), time); bladeTrail.update(time, 0.2);
   if (phase !== 'cine') ninja.root.visible = !(P.hurtFlash > 0.5 && Math.floor(time * 30) % 2 === 0);
-  v1.subVectors(P.pos, camera.position).setY(0).normalize(); rimLight.position.set(P.pos.x + v1.x * 1.6 - v1.z * 0.9, P.pos.y + 2.2, P.pos.z + v1.z * 1.6 + v1.x * 0.9); rimLight.intensity = ninja.root.visible ? 9 : 0;
 }
 
 // ============================================================================ camera (original feel: wide FOV, speed kick)
