@@ -1,0 +1,1084 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RAM 元件實作</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: lab bench — schematic on the left, control console + quiz on the right; tabs = 工作項目 */
+:root{
+  --bg:#f3f5f4; --panel:#ffffff; --panel2:#f7f9f8; --ink:#17201d; --muted:#5d6b66; --line:#dde3e0;
+  --accent:#0f766e; --accent-ink:#ffffff;
+  --low:#2f6fde; --high:#e0464b;
+  --on:#15964a; --off:#9aa5a1; --cond:#e3720f; --err:#d12f2f; --warn:#c98a00; --okc:#15964a;
+  --cellbox:#eef2f0; --blk:#f3f6f5;
+  --font-body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111614; --panel:#18201d; --panel2:#1d2622; --ink:#e7eeeb; --muted:#93a39d; --line:#2b3632;
+  --accent:#2bb3a5; --accent-ink:#06201d;
+  --low:#5b8ff0; --high:#f2595d;
+  --on:#33c46b; --off:#5f6d68; --cond:#ff9636; --err:#ff5a5a; --warn:#e6b23a; --okc:#33c46b;
+  --cellbox:#1e2925; --blk:#1c2522; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111614; --panel:#18201d; --panel2:#1d2622; --ink:#e7eeeb; --muted:#93a39d; --line:#2b3632;
+  --accent:#2bb3a5; --accent-ink:#06201d;
+  --low:#5b8ff0; --high:#f2595d;
+  --on:#33c46b; --off:#5f6d68; --cond:#ff9636; --err:#ff5a5a; --warn:#e6b23a; --okc:#33c46b;
+  --cellbox:#1e2925; --blk:#1c2522; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:14px;line-height:1.55;margin:0}
+.wrap{max-width:1320px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 40px}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--panel)}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--panel);border-bottom:1px solid var(--line)}
+header.top .wrap{display:flex;align-items:center;gap:18px;padding-block:10px;flex-wrap:wrap}
+.brand{display:flex;flex-direction:column;line-height:1.2}
+.brand b{font-size:16px;letter-spacing:.02em}
+.brand span{font-size:12px;color:var(--muted)}
+nav#tabs{display:flex;gap:4px;overflow-x:auto;flex:1;min-width:0;scrollbar-width:thin}
+nav#tabs a{white-space:nowrap;text-decoration:none;color:var(--muted);padding:7px 11px;border-radius:8px;font-size:13px;border:1px solid transparent}
+nav#tabs a b{font-family:var(--font-mono);font-weight:600;margin-right:5px;color:var(--accent)}
+nav#tabs a:hover{background:var(--panel2);color:var(--ink)}
+nav#tabs a.on{background:var(--panel2);color:var(--ink);border-color:var(--line)}
+nav#tabs a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.page{display:none;padding-top:18px}
+.page.show{display:block}
+.phead{display:flex;flex-direction:column;gap:4px;margin-bottom:14px;max-width:900px}
+.kicker{font-family:var(--font-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.phead h1{margin:0;font-size:24px;text-wrap:balance}
+.phead p{margin:0;color:var(--muted);max-width:75ch}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:16px;align-items:start}
+@media (max-width:960px){.grid{grid-template-columns:minmax(0,1fr)}}
+.col{display:flex;flex-direction:column;gap:16px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;min-width:0}
+.card h3{margin:0 0 10px;font-size:13px;letter-spacing:.06em;color:var(--muted);font-weight:500}
+.stage{padding:10px}
+.stage .svgbox{overflow-x:auto}
+svg.sch{width:100%;height:auto;display:block;min-width:520px}
+svg.sch.wide{min-width:640px}
+@media (max-width:600px){svg.sch:not(.wide){min-width:0}}
+.kv.chk{flex-direction:row;align-items:center}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--muted);padding:8px 6px 2px;border-top:1px solid var(--line);margin-top:6px}
+.legend span{display:flex;align-items:center;gap:6px}
+.lg{display:inline-block;width:18px;height:10px;border-radius:3px;border:2px solid}
+.lg.off{border-color:var(--off)}
+.lg.on{border-color:var(--on);background:color-mix(in oklab,var(--on) 20%,transparent)}
+.lg.cond{border-color:var(--cond);background:color-mix(in oklab,var(--cond) 25%,transparent)}
+.lg.grad{border:0;background:linear-gradient(90deg,var(--low),var(--high))}
+.lg.leak{border:2px dashed var(--err);border-radius:50%;width:12px;height:12px}
+
+/* SVG */
+.sch text{fill:var(--ink);font-family:var(--font-body);font-size:12px}
+.sch .mono{font-family:var(--font-mono)}
+.sch .muted{fill:var(--muted)}
+.wire{fill:none;stroke:var(--off);stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+.wire.thick{stroke-width:3.6}
+.dot{fill:var(--ink)}
+.plate{stroke:var(--ink);stroke-width:4;stroke-linecap:round;fill:none}
+.gndsym{stroke:var(--muted);stroke-width:2;fill:none;stroke-linecap:round}
+.capfill{fill:var(--high)}
+.plus{font-family:var(--font-mono);font-weight:600;fill:var(--high) !important;text-anchor:middle;font-size:10px !important}
+.vt{font-family:var(--font-mono) !important;font-size:10px !important;fill:var(--muted) !important}
+.bitb rect{fill:var(--panel);stroke:var(--line)}
+.bitb text{font-family:var(--font-mono) !important;font-weight:600;font-size:15px !important;text-anchor:middle;dominant-baseline:central}
+.bitb.warn rect{stroke:var(--warn);fill:color-mix(in oklab,var(--warn) 15%,var(--panel))}
+.cellbox{fill:var(--cellbox);stroke:transparent;stroke-width:2}
+.cellbox.sel{stroke:var(--accent)}
+.cellbox.flash{fill:color-mix(in oklab,var(--accent) 22%,var(--cellbox))}
+.leak{fill:none;stroke:var(--err);stroke-width:2;stroke-dasharray:3 4;animation:flow 0.9s linear infinite}
+.leakt{fill:var(--err) !important;font-size:9px !important}
+.flow{fill:none;stroke:var(--cond);stroke-width:2.4;stroke-dasharray:2 9;stroke-linecap:round;animation:flow .55s linear infinite;pointer-events:none}
+.flow.rev{animation-direction:reverse}
+@keyframes flow{to{stroke-dashoffset:-11}}
+.mos path,.mos circle{fill:none;stroke:var(--off);stroke-width:2.6;stroke-linecap:round;transition:stroke .15s}
+.mos .ch{stroke-width:4.5}
+.mos .halo{fill:transparent;stroke:none;transition:fill .15s}
+.mos.on path,.mos.on circle{stroke:var(--on)}
+.mos.on .halo{fill:color-mix(in oklab,var(--on) 16%,transparent)}
+.mos.cond path,.mos.cond circle{stroke:var(--cond)}
+.mos.cond .halo{fill:color-mix(in oklab,var(--cond) 24%,transparent);animation:pulse 0.8s ease-in-out infinite alternate}
+@keyframes pulse{from{opacity:.55}to{opacity:1}}
+.tl{font-size:10px !important;fill:var(--muted) !important;font-family:var(--font-mono) !important}
+.blk rect{fill:var(--blk);stroke:var(--line);stroke-width:1.5}
+.blk .bt{font-weight:700;font-size:13px}
+.blk .bs{font-size:11px;fill:var(--muted)}
+.blk .bst{font-family:var(--font-mono);font-size:11px;fill:var(--muted);text-anchor:end}
+.blk.on rect{stroke:var(--accent);fill:color-mix(in oklab,var(--accent) 12%,var(--blk))}
+.blk.on .bst{fill:var(--accent)}
+.blk.bad rect{stroke:var(--err);fill:color-mix(in oklab,var(--err) 14%,var(--blk))}
+.blk.bad .bst{fill:var(--err)}
+.blk.dim{opacity:.55}
+.drv{fill:var(--panel);stroke:var(--ink);stroke-width:1.6}
+/* clickable schematic parts */
+.hit{cursor:pointer}
+.hit:focus{outline:none}
+.hit:hover>rect:first-child,.hit:focus-visible>rect:first-child,.hit:hover>.blk>rect,.hit:focus-visible>.blk>rect{stroke:var(--accent);stroke-width:2.4}
+.hit.locked{cursor:not-allowed}
+.pill rect{fill:var(--panel2);stroke:var(--line);stroke-width:1.2}
+.pill text{font-family:var(--font-mono) !important;font-size:12px;text-anchor:middle;dominant-baseline:central;fill:var(--muted) !important}
+.pill.on rect{fill:var(--accent);stroke:var(--accent)}
+.pill.on text{fill:var(--accent-ink) !important;font-weight:600}
+.plabel{font-size:12px !important;font-weight:700;text-anchor:end;dominant-baseline:central}
+.vsw{align-self:flex-start;margin-top:8px}
+.seg a{padding:6px 12px;text-decoration:none;color:inherit;font-size:12.5px;border-right:1px solid var(--line)}
+.seg a:last-child{border-right:0}
+.seg a.on{background:var(--accent);color:var(--accent-ink);font-weight:700}
+.hint{font-size:12.5px;color:var(--muted);padding:4px 6px 0}
+.band{fill:color-mix(in oklab,var(--accent) 7%,transparent)}
+.lbl{font-family:var(--font-mono) !important;font-weight:600}
+@media (prefers-reduced-motion:reduce){.flow,.leak,.mos.cond .halo{animation:none}}
+
+/* controls */
+.ctrlbody{display:flex;flex-direction:column;gap:8px}
+.cgroup{font-size:11px;letter-spacing:.06em;color:var(--muted);margin-top:4px}
+button{font:inherit;color:inherit}
+.sw{display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto;align-items:center;gap:0 10px;width:100%;text-align:left;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 10px;cursor:pointer}
+.sw .sname{font-weight:700;font-size:13.5px}
+.sw .sname code{font-family:var(--font-mono);font-weight:600;color:var(--accent);margin-right:6px}
+.sw .shint{grid-column:1;font-size:11.5px;color:var(--muted)}
+.sw .knob{grid-row:1/3;grid-column:2;width:54px;height:28px;border-radius:14px;background:var(--line);position:relative;display:flex;align-items:center;font-family:var(--font-mono);font-size:12px;font-weight:600}
+.sw .knob::after{content:"0";position:absolute;right:9px;color:var(--muted)}
+.sw .knob i{position:absolute;left:3px;top:3px;width:22px;height:22px;border-radius:50%;background:var(--panel);box-shadow:0 1px 3px rgba(0,0,0,.25);transition:left .15s}
+.sw.on{border-color:var(--accent)}
+.sw.on .knob{background:var(--accent)}
+.sw.on .knob::after{content:"1";left:9px;right:auto;color:var(--accent-ink)}
+.sw.on .knob i{left:29px}
+.sw:disabled,.seg button:disabled{cursor:not-allowed;opacity:.6}
+.segw{display:flex;flex-direction:column;gap:4px}
+.seglabel{font-weight:700;font-size:13px}
+.seglabel small{font-weight:400;color:var(--muted);font-size:11.5px;margin-left:6px}
+.seg{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--panel2)}
+.seg button{flex:1;padding:7px 6px;border:0;background:transparent;cursor:pointer;font-size:12.5px;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--accent);color:var(--accent-ink);font-weight:700}
+.btn{border:1px solid var(--line);background:var(--panel2);border-radius:9px;padding:7px 12px;cursor:pointer;font-size:13px}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+.btn.ghost{background:transparent}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+/* status */
+.statbody{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px 16px}
+.kv{display:flex;flex-direction:column;gap:2px;min-width:0}
+.kv span{font-size:11.5px;color:var(--muted)}
+.kv b{font-family:var(--font-mono);font-size:15px;font-variant-numeric:tabular-nums;font-weight:600}
+.kv.wide{grid-column:1/-1}
+.meter{position:relative;height:16px;border-radius:5px;background:var(--panel2);border:1px solid var(--line);overflow:hidden}
+.meter .f{position:absolute;left:0;top:0;bottom:0;background:var(--high);opacity:.85}
+.meter .th{position:absolute;left:50%;top:-2px;bottom:-2px;width:2px;background:var(--ink)}
+.meter .th2{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(45deg,color-mix(in oklab,var(--warn) 30%,transparent) 0 4px,transparent 4px 8px)}
+.mlab{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);font-family:var(--font-mono)}
+.note{font-size:12.5px;color:var(--muted)}
+.setting{display:flex;flex-direction:column;gap:4px}
+.setting label{font-size:12px;color:var(--muted);display:flex;justify-content:space-between}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.chk{display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer}
+.chk input{accent-color:var(--accent);width:16px;height:16px}
+.mini{display:grid;grid-template-columns:auto repeat(3,1fr);gap:3px;font-family:var(--font-mono);font-size:12px;text-align:center}
+.mini div{padding:3px 0;border-radius:5px;background:var(--panel2)}
+.mini .h{background:transparent;color:var(--muted)}
+.mini .t{outline:2px solid var(--accent)}
+.mini .w{color:var(--warn)}
+.dout{display:inline-flex;align-items:center;gap:6px}
+.led{width:12px;height:12px;border-radius:50%;background:var(--line);display:inline-block}
+.led.h{background:var(--high);box-shadow:0 0 8px var(--high)}
+.led.l{background:var(--low)}
+
+/* quiz */
+.qhead{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.qhead h3{margin:0}
+.seg.small button{padding:5px 10px;font-size:12px}
+.demos{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.task{border:1px solid var(--accent);border-radius:10px;padding:10px 12px;background:color-mix(in oklab,var(--accent) 7%,var(--panel));margin-bottom:10px}
+.task .tk{font-size:11px;letter-spacing:.08em;color:var(--accent);font-weight:700}
+.task .tt{font-size:14.5px;margin-top:2px}
+.task .tt b{font-family:var(--font-mono);color:var(--accent)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.stats div{background:var(--panel2);border-radius:9px;padding:8px;display:flex;flex-direction:column;align-items:center}
+.stats b{font-family:var(--font-mono);font-size:20px;font-variant-numeric:tabular-nums}
+.stats span{font-size:11px;color:var(--muted);text-align:center}
+.result{border-radius:10px;padding:12px;background:var(--panel2);margin-bottom:10px;border:1px solid var(--line)}
+.result .big{font-family:var(--font-mono);font-size:40px;font-weight:600;line-height:1;color:var(--accent)}
+.result.fail .big{color:var(--err)}
+.result ul{margin:8px 0 0;padding-left:18px;font-size:12.5px;color:var(--err)}
+.result table{width:100%;font-size:12.5px;margin-top:8px;border-collapse:collapse}
+.result td{padding:2px 0}
+.result td:last-child{text-align:right;font-family:var(--font-mono)}
+.answer{display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap;font-size:12.5px}
+.proc ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:3px}
+.proc h4{margin:10px 0 4px;font-size:13px}
+.proc h4:first-of-type{margin-top:0}
+.proc p{margin:8px 0 0;font-size:12.5px;color:var(--muted)}
+.proc code,.note code,.phead code{font-family:var(--font-mono);color:var(--accent);font-size:.95em}
+ol.log{list-style:none;margin:0;padding:0;max-height:220px;overflow-y:auto;font-size:12.5px;display:flex;flex-direction:column;gap:2px}
+ol.log li{padding:2px 0;border-bottom:1px dashed var(--line)}
+ol.log .lt{font-family:var(--font-mono);color:var(--muted);font-size:11px;margin-right:4px}
+ol.log .err{color:var(--err)}
+ol.log .info{color:var(--accent)}
+ol.log .ok{color:var(--okc);font-weight:700}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:6px;align-items:center;z-index:20;pointer-events:none;width:min(520px,calc(100% - 32px))}
+#toast div{background:var(--err);color:#fff;padding:9px 14px;border-radius:10px;font-size:13.5px;box-shadow:0 6px 20px rgba(0,0,0,.25);animation:tin .2s ease-out}
+#toast div.ok{background:var(--okc)}
+@keyframes tin{from{transform:translateY(10px);opacity:0}}
+
+/* overview */
+.ov{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.ov a{display:flex;flex-direction:column;gap:4px;text-decoration:none;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+.ov a:hover{border-color:var(--accent)}
+.ov a .n{font-family:var(--font-mono);color:var(--accent);font-size:12px}
+.ov a b{font-size:15px}
+.ov a span{color:var(--muted);font-size:12.5px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+@media (max-width:860px){.two{grid-template-columns:1fr}}
+.two ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.tblw{overflow-x:auto}
+table.hist{width:100%;border-collapse:collapse;font-size:13px}
+table.hist th,table.hist td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.hist th{color:var(--muted);font-weight:500;font-size:12px}
+table.hist td.num{font-family:var(--font-mono);text-align:right;font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+
+<header class="top"><div class="wrap">
+  <div class="brand"><b>RAM 元件可操作實作</b><span>DRAM／SRAM 記憶胞互動模擬與測驗</span></div>
+  <nav id="tabs" aria-label="工作項目">
+    <a href="#home"><b>00</b>總覽</a>
+    <a href="#p1"><b>01</b>DRAM 記憶胞</a>
+    <a href="#p2"><b>02</b>DRAM 單位元介面</a>
+    <a href="#p3"><b>03</b>DRAM 3×3 陣列</a>
+    <a href="#p4"><b>04</b>SRAM 記憶胞</a>
+    <a href="#p5"><b>05</b>SRAM 單位元介面</a>
+    <a href="#p6"><b>06</b>SRAM 3×3 陣列</a>
+  </nav>
+</div></header>
+
+<main class="wrap" id="pages">
+  <section class="page" id="home">
+    <div class="phead"><div class="kicker">總覽</div><h1>RAM 元件可操作實作</h1>
+      <p>把 DRAM 與 SRAM 的記憶胞做成可以操作的電路。每個工作項目在獨立分頁，可先用「練習模式」自由操作或看示範，再切到「測驗模式」計時完成指定的資料設定。</p></div>
+    <div class="ov">
+      <a href="#p1"><span class="n">工作項目 1</span><b>DRAM 基本記憶胞</b><span>1 顆電晶體＋1 顆電容。直接操作字元線與位元線，觀察電容充電、漏電與破壞性讀取。</span></a>
+      <a href="#p2"><span class="n">工作項目 2</span><b>DRAM 單位元的儲存介面</b><span>1T1C：寫入驅動器、預充電路、感測放大器。另含課本圖 (c) 的 3T 記憶胞存取介面（非破壞性、反相讀出）。</span></a>
+      <a href="#p3"><span class="n">工作項目 3</span><b>DRAM 3×3 陣列＋儲存介面</b><span>列解碼器、行選擇與每行的感測放大器；可把資料寫到任一位置。</span></a>
+      <a href="#p4"><span class="n">工作項目 4</span><b>SRAM 基本記憶胞</b><span>6T 結構：兩個交叉耦合反相器＋兩顆存取電晶體，觀察正回授翻轉。</span></a>
+      <a href="#p5"><span class="n">工作項目 5</span><b>SRAM 單位元的儲存介面</b><span>差動位元線 BL／BLB、預充、寫入驅動器與差動感測放大器。</span></a>
+      <a href="#p6"><span class="n">工作項目 6</span><b>SRAM 3×3 陣列＋儲存介面</b><span>同列半選記憶胞的保護：為什麼開字元線前一定要預充。</span></a>
+    </div>
+    <div class="two">
+      <div class="card"><h3>使用方式與評分</h3>
+        <ul>
+          <li><b>練習模式</b>：直接點電路圖中的方塊（切換 ON／OFF）和小按鈕（選數值）操作電路，或按「示範」看正確步驟自動執行。</li>
+          <li><b>測驗模式</b>：按「開始測驗」後隨機出題並開始計時。測驗時不顯示步驟提示。</li>
+          <li>每個<b>錯誤步驟扣 10 分</b>（例如字元線開啟時改變位元線、未回寫就關閉字元線、預充與寫入同時驅動等）。</li>
+          <li><b>操作速度列入評分</b>：超過該題標準時間後，每多 1 秒扣 2 分，最多扣 40 分。</li>
+          <li>完成條件：目標資料正確存好、其他記憶胞資料沒有被破壞，且控制訊號都已關閉（回到 0）。</li>
+        </ul>
+      </div>
+      <div class="card"><h3>圖例</h3>
+        <ul>
+          <li><span class="lg off"></span>&nbsp;電晶體<b>截止（OFF）</b>：灰色</li>
+          <li><span class="lg on"></span>&nbsp;電晶體<b>導通（ON）</b>，兩端等電位、沒有電流：綠色</li>
+          <li><span class="lg cond"></span>&nbsp;電晶體<b>導通且有電流</b>（正在充放電）：橘色並閃動，導線上有流動虛線</li>
+          <li><span class="lg grad"></span>&nbsp;導線顏色代表電壓：藍＝0 V，紫＝VDD/2，紅＝VDD（1.2 V）</li>
+          <li><span class="lg leak"></span>&nbsp;DRAM 電容的紅色虛線箭頭＝漏電路徑，電荷越多漏得越明顯</li>
+        </ul>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between"><h3 style="margin:0">測驗成績紀錄</h3><button class="btn ghost" id="clearHist">清除紀錄</button></div>
+      <div class="tblw" style="margin-top:8px"><table class="hist"><thead><tr><th>時間</th><th>項目</th><th>任務</th><th style="text-align:right">用時(秒)</th><th style="text-align:right">錯誤</th><th style="text-align:right">分數</th></tr></thead><tbody id="histBody"></tbody></table></div>
+    </div>
+  </section>
+</main>
+<div id="toast" aria-live="polite"></div>
+
+<script>
+"use strict";
+/* ================= helpers ================= */
+const NS='http://www.w3.org/2000/svg';
+function S(tag,attrs={},parent){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(parent)parent.appendChild(e);return e;}
+function H(tag,attrs={},parent,html){const e=document.createElement(tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(html!=null)e.innerHTML=html;if(parent)parent.appendChild(e);return e;}
+function T(parent,x,y,txt,cls='',extra={}){const t=S('text',Object.assign({x,y,class:cls},extra),parent);t.textContent=txt;return t;}
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const sigm=x=>1/(1+Math.exp(-x));
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const VDD=1.2;
+const fV=v=>(v*VDD).toFixed(2)+' V';
+const rnd2=()=>Math.random()<0.5?0:1;
+const grid=(R,C,f)=>Array.from({length:R},(_,r)=>Array.from({length:C},(_,c)=>typeof f==='function'?f(r,c):f));
+function vstroke(v){const p=Math.round(clamp(v,0,1)*100);return `color-mix(in oklab, var(--high) ${p}%, var(--low))`;}
+function setCls(el,cls){if(el._c!==cls){el.setAttribute('class',cls);el._c=cls;}}
+function setTxt(el,t){if(el._t!==t){el.textContent=t;el._t=t;}}
+function setStroke(el,v){const s=vstroke(v);if(el._s!==s){el.style.stroke=s;el._s=s;}}
+function toast(msg,ok){const box=document.getElementById('toast');const d=H('div',ok?{class:'ok'}:{},box);d.textContent=msg;setTimeout(()=>d.remove(),2400);while(box.children.length>3)box.firstChild.remove();}
+function addDefs(svg){const d=S('defs',{},svg);const m=S('marker',{id:svg.id+'-ar',viewBox:'0 0 10 10',refX:'5',refY:'5',markerWidth:'5',markerHeight:'5',orient:'auto-start-reverse'},d);S('path',{d:'M0,0 L10,5 L0,10 z',style:'fill:var(--err)'},m);}
+
+/* MOSFET symbol. canonical: vertical, gate on left, centred at 0,0, S/D leads at (0,±22), gate terminal (-26,0) */
+function mos(par,cx,cy,orient,type){
+  const tf=orient==='h'?`translate(${cx},${cy}) rotate(90)`:orient==='hb'?`translate(${cx},${cy}) rotate(-90)`:orient==='vr'?`translate(${cx},${cy}) scale(-1,1)`:`translate(${cx},${cy})`;
+  const g=S('g',{transform:tf,class:'mos off'},par);
+  S('rect',{x:-31,y:-25,width:42,height:50,rx:10,class:'halo'},g);
+  S('path',{d:'M0,-22 V-11 H-7 M-7,11 H0 V22',class:'sd'},g);
+  S('path',{d:'M-7,-15 V15',class:'ch'},g);
+  S('path',{d:'M-13,-12 V12',class:'gp'},g);
+  if(type==='p'){S('circle',{cx:-17,cy:0,r:3.6},g);S('path',{d:'M-20.6,0 H-26'},g);}
+  else S('path',{d:'M-13,0 H-26'},g);
+  g._c='mos off';return g;
+}
+const mosState=(on,cur)=>!on?'mos off':(cur?'mos cond':'mos on');
+
+/* ================= DRAM model ================= */
+class DramModel{
+  constructor(R,C){this.R=R;this.C=C;this.v=grid(R,C,0);this.bl=Array(C).fill(0.5);this.wl=Array(R).fill(0);
+    this.drive=Array(C).fill(null);this.leakTau=20;this.ratio=1/3;/* Cs/Cbl */this.tauT=0.22;this.tauD=0.05;}
+  step(dt){const n=Math.max(1,Math.ceil(dt/0.004)),h=dt/n,kT=h/this.tauT,kD=Math.min(1,h/this.tauD),kL=this.leakTau>0?h/this.leakTau:0;
+    for(let s=0;s<n;s++)for(let c=0;c<this.C;c++){const d=this.drive[c];
+      for(let r=0;r<this.R;r++){let v=this.v[r][c];
+        if(this.wl[r]){const i=(this.bl[c]-v)*kT;v+=i;if(d==null)this.bl[c]-=i*this.ratio;}
+        v-=v*kL;this.v[r][c]=v;}
+      if(d!=null)this.bl[c]+=(d-this.bl[c])*kD;}}
+}
+/* ================= SRAM model (6T, conductance based) ================= */
+class SramModel{
+  constructor(R,C){this.R=R;this.C=C;this.q=grid(R,C,0);this.qb=grid(R,C,1);this.bl=Array(C).fill(1);this.blb=Array(C).fill(1);
+    this.wl=Array(R).fill(0);this.dBL=Array(C).fill(null);this.dBLB=Array(C).fill(null);this.power=1;this.vdd=1;
+    this.kN=90;this.kP=10;this.kA=30;this.Vt=0.35;this.sv=0.05;this.Cbl=10;this.gD=400;}
+  set(r,c,b){this.q[r][c]=b?1:0;this.qb[r][c]=b?0:1;}
+  bit(r,c){return this.q[r][c]>this.qb[r][c]?1:0;}
+  settled(r,c,b){return b?(this.q[r][c]>0.9&&this.qb[r][c]<0.1):(this.q[r][c]<0.1&&this.qb[r][c]>0.9);}
+  gs(r,c){const Q=this.q[r][c],QB=this.qb[r][c],V=this.vdd,{kN,kP,Vt,sv}=this;
+    return{P1:kP*sigm((V-QB-Vt)/sv),N1:kN*sigm((QB-Vt)/sv),P2:kP*sigm((V-Q-Vt)/sv),N2:kN*sigm((Q-Vt)/sv),A:this.wl[r]?this.kA:0};}
+  step(dt){const n=Math.max(1,Math.ceil(dt/0.0015)),h=dt/n;
+    for(let s=0;s<n;s++){this.vdd+=((this.power?1:0)-this.vdd)*Math.min(1,h/0.08);
+      for(let c=0;c<this.C;c++){let iB=0,iBB=0;const bl=this.bl[c],blb=this.blb[c];
+        for(let r=0;r<this.R;r++){const Q=this.q[r][c],QB=this.qb[r][c],g=this.gs(r,c);
+          let dQ=g.P1*(this.vdd-Q)-g.N1*Q+g.A*(bl-Q),dQB=g.P2*(this.vdd-QB)-g.N2*QB+g.A*(blb-QB);
+          if(this.vdd<0.6){dQ-=Q*4;dQB-=QB*4;}
+          this.q[r][c]=clamp(Q+dQ*h+(Math.random()-0.5)*0.004,-0.05,1.05);
+          this.qb[r][c]=clamp(QB+dQB*h+(Math.random()-0.5)*0.004,-0.05,1.05);
+          iB+=g.A*(Q-bl);iBB+=g.A*(QB-blb);}
+        const kd=Math.min(1,h*this.gD/this.Cbl);
+        this.bl[c]+=iB*h/this.Cbl;this.blb[c]+=iBB*h/this.Cbl;
+        if(this.dBL[c]!=null)this.bl[c]+=(this.dBL[c]-this.bl[c])*kd;
+        if(this.dBLB[c]!=null)this.blb[c]+=(this.dBLB[c]-this.blb[c])*kd;}}}
+}
+
+/* ================= cell drawings ================= */
+function drawDramCell(par,ox,oy,s=1,svgId){
+  const g=S('g',{transform:`translate(${ox},${oy}) scale(${s})`},par);const r={g};
+  r.box=S('rect',{x:8,y:30,width:146,height:104,rx:10,class:'cellbox'},g);
+  r.wGate=S('path',{d:'M55,20 V44',class:'wire'},g);
+  r.wBL=S('path',{d:'M0,70 H33',class:'wire'},g);
+  r.wSN=S('path',{d:'M77,70 H105 V82',class:'wire'},g);
+  r.T=mos(g,55,70,'h','n');
+  r.flow=S('path',{d:'M0,70 H105 V82',class:'flow'},g);r.flow.style.display='none';
+  S('circle',{cx:0,cy:70,r:3.4,class:'dot'},g);S('circle',{cx:55,cy:20,r:3.4,class:'dot'},g);
+  r.fill=S('rect',{x:87,y:109,width:36,height:0,class:'capfill'},g);
+  r.top=S('path',{d:'M83,82 H127',class:'plate'},g);
+  S('path',{d:'M83,110 H127',class:'plate'},g);
+  S('path',{d:'M105,110 V120 M94,120 H116 M98,124 H112 M102,128 H108',class:'gndsym'},g);
+  r.plus=T(g,105,94,'+ + + +','plus');
+  r.leak=S('path',{d:'M128,86 C140,92 140,108 132,118',class:'leak','marker-end':`url(#${svgId}-ar)`},g);
+  r.leakT=T(g,136,128,'漏電','leakt');
+  r.vt=T(g,88,146,'0.00V','vt');
+  T(g,46,104,'M','tl');T(g,132,78,'Cs','tl');
+  const bb=S('g',{class:'bitb'},g);S('rect',{x:120,y:34,width:28,height:24,rx:6},bb);r.bit=T(bb,134,46.5,'0');r.bitb=bb;
+  return r;
+}
+function updDramCell(r,v,bl,wl,lv){
+  setStroke(r.wGate,wl?1:0);setStroke(r.wBL,bl);setStroke(r.wSN,v);setStroke(r.top,v);
+  const h=26*clamp(v,0,1);r.fill.setAttribute('y',(109-h).toFixed(2));r.fill.setAttribute('height',h.toFixed(2));r.fill.style.opacity=(0.2+0.6*clamp(v,0,1)).toFixed(2);
+  r.plus.style.opacity=clamp((v-0.08)*1.3,0,1).toFixed(2);
+  const dv=bl-v,cur=wl&&Math.abs(dv)>0.02;setCls(r.T,mosState(wl,cur));
+  r.flow.style.display=cur?'':'none';if(cur)setCls(r.flow,dv<0?'flow rev':'flow');
+  const lo=wl?0:clamp(v*1.1,0,1);r.leak.style.opacity=lo.toFixed(2);r.leakT.style.opacity=lo.toFixed(2);
+  if(lv){const b=lv.bit(v);setTxt(r.vt,(v*lv.V).toFixed(2)+'V');setTxt(r.bit,b);setCls(r.bitb,b==='?'?'bitb warn':'bitb');return;}
+  setTxt(r.vt,(v*VDD).toFixed(2)+'V');setTxt(r.bit,v>0.5?'1':'0');
+  setCls(r.bitb,(v>0.3&&v<0.7)?'bitb warn':'bitb');
+}
+function drawSramCell(par,ox,oy,s=1){
+  const g=S('g',{transform:`translate(${ox},${oy}) scale(${s})`},par);const r={g};
+  r.box=S('rect',{x:6,y:28,width:248,height:140,rx:10,class:'cellbox'},g);
+  r.wWL=S('path',{d:'M40,20 V69 M220,20 V69',class:'wire'},g);
+  r.wBL=S('path',{d:'M0,95 H18',class:'wire'},g);
+  r.wBLB=S('path',{d:'M242,95 H260',class:'wire'},g);
+  r.wQ=S('path',{d:'M62,95 H95 M95,84 V106 M95,88 H139 M139,62 V128',class:'wire'},g);
+  r.wQB=S('path',{d:'M198,95 H165 M165,84 V106 M165,102 H121 M121,62 V128',class:'wire'},g);
+  r.wVDD=S('path',{d:'M76,40 H184',class:'wire'},g);
+  S('path',{d:'M76,150 H184',class:'wire'},g);
+  S('path',{d:'M130,150 V156 M120,156 H140 M124,160 H136 M128,164 H132',class:'gndsym'},g);
+  T(g,188,44,'VDD','tl');
+  r.A1=mos(g,40,95,'h','n');r.A2=mos(g,220,95,'h','n');
+  r.P1=mos(g,95,62,'vr','p');r.N1=mos(g,95,128,'vr','n');
+  r.P2=mos(g,165,62,'vl','p');r.N2=mos(g,165,128,'vl','n');
+  r.f1=S('path',{d:'M0,95 H95',class:'flow'},g);r.f2=S('path',{d:'M260,95 H165',class:'flow'},g);r.f1.style.display=r.f2.style.display='none';
+  for(const [x,y] of [[95,88],[95,95],[139,88],[165,95],[165,102],[121,102],[40,20],[220,20],[0,95],[260,95],[95,40],[165,40],[95,150],[165,150]])S('circle',{cx:x,cy:y,r:3,class:'dot'},g);
+  T(g,82,66,'P1','tl',{'text-anchor':'end'});T(g,82,132,'N1','tl',{'text-anchor':'end'});
+  T(g,180,66,'P2','tl');T(g,180,132,'N2','tl');T(g,40,120,'A1','tl',{'text-anchor':'middle'});T(g,220,120,'A2','tl',{'text-anchor':'middle'});
+  r.qL=T(g,74,86,'Q','lbl',{'text-anchor':'middle'});r.qbL=T(g,186,86,'Q̄','lbl',{'text-anchor':'middle'});
+  const bb=S('g',{class:'bitb'},g);S('rect',{x:216,y:134,width:30,height:26,rx:6},bb);r.bit=T(bb,231,147,'0');r.bitb=bb;
+  return r;
+}
+function updSramCell(r,m,i,c){
+  const Q=m.q[i][c],QB=m.qb[i][c],g=m.gs(i,c),bl=m.bl[c],blb=m.blb[c],wl=m.wl[i],V=m.vdd;
+  setStroke(r.wWL,wl?1:0);setStroke(r.wBL,bl);setStroke(r.wBLB,blb);setStroke(r.wQ,Q);setStroke(r.wQB,QB);setStroke(r.wVDD,V);
+  const th=0.03;
+  setCls(r.P1,mosState(g.P1>m.kP*0.5,Math.abs(V-Q)>th));setCls(r.N1,mosState(g.N1>m.kN*0.5,Q>th));
+  setCls(r.P2,mosState(g.P2>m.kP*0.5,Math.abs(V-QB)>th));setCls(r.N2,mosState(g.N2>m.kN*0.5,QB>th));
+  const c1=wl&&Math.abs(bl-Q)>th,c2=wl&&Math.abs(blb-QB)>th;
+  setCls(r.A1,mosState(wl,c1));setCls(r.A2,mosState(wl,c2));
+  r.f1.style.display=c1?'':'none';if(c1)setCls(r.f1,bl>Q?'flow':'flow rev');
+  r.f2.style.display=c2?'':'none';if(c2)setCls(r.f2,blb>QB?'flow':'flow rev');
+  const amb=Math.abs(Q-QB)<0.4;setTxt(r.bit,amb?'?':(Q>QB?'1':'0'));setCls(r.bitb,amb?'bitb warn':'bitb');
+}
+function block(g,x,y,w,h,title,sub){const wr=S('g',{},g);const b=S('g',{class:'blk'},wr);S('rect',{x,y,width:w,height:h,rx:9},b);
+  const t=T(b,x+12,y+(h>44?24:18),title,'bt');const s=T(b,x+12,y+(h>44?42:33),sub,'bs');const st=T(b,x+w-10,y+(h>44?24:18),'OFF','bst');
+  return{g:b,w:wr,t,s,st,set(state,stTxt,subTxt){setCls(b,'blk '+state);setTxt(st,stTxt);if(subTxt!=null)setTxt(s,subTxt);}};}
+
+/* ================= Quiz ================= */
+let HIST=[];try{HIST=JSON.parse(localStorage.getItem('ramlab-hist')||'[]')||[];}catch(e){HIST=[];}
+function saveHist(){try{localStorage.setItem('ramlab-hist',JSON.stringify(HIST.slice(-200)));}catch(e){}renderHist();}
+function renderHist(){const tb=document.getElementById('histBody');if(!tb)return;
+  if(!HIST.length){tb.innerHTML='<tr><td colspan="6" style="color:var(--muted)">尚無紀錄。到任一工作項目切換到「測驗模式」並按「開始測驗」。</td></tr>';return;}
+  tb.innerHTML=HIST.slice().reverse().map(h=>`<tr><td>${new Date(h.at).toLocaleString('zh-TW',{hour12:false})}</td><td>項目 ${h.num}</td><td>${h.task}</td><td class="num">${h.t.toFixed(1)}</td><td class="num">${h.err}</td><td class="num"><b>${h.score}</b></td></tr>`).join('');}
+function calcScore(t,nErr,par,failed){const errPen=nErr*10;const timePen=Math.min(40,Math.max(0,Math.round((t-par)*2)));return{score:failed?0:Math.max(0,100-errPen-timePen),errPen,timePen};}
+
+class Quiz{
+  constructor(p){this.p=p;this.active=false;this.result=null;this.answer=null;}
+  mount(box){this.box=box;this.render();}
+  elapsed(){return(performance.now()-this.t0)/1000;}
+  render(){const p=this.p,b=this.box;
+    let h=`<div class="qhead"><h3>練習／測驗</h3><div class="seg small"><button data-m="practice" class="${p.mode==='practice'?'on':''}" ${this.active?'disabled':''}>練習模式</button><button data-m="test" class="${p.mode==='test'?'on':''}" ${p.busy?'disabled':''}>測驗模式</button></div></div>`;
+    if(p.mode==='practice'){h+=`<p class="note" style="margin:0">自由操作控制訊號，或按示範按鈕看正確步驟自動執行（示範時控制會暫時鎖定）。</p><div class="demos">${p.demos.map((d,i)=>`<button class="btn" data-demo="${i}" ${p.busy?'disabled':''}>▶ ${d.l}</button>`).join('')}</div>`;}
+    else if(this.active){const t=this.task;
+      h+=`<div class="task"><div class="tk">任務</div><div class="tt">${t.text}</div>${t.type==='read'?`<div class="answer">讀出後回報：<button class="btn" data-ans="0">資料是 0</button><button class="btn" data-ans="1">資料是 1</button>${this.answer!=null?`<span>已回報 <b>${this.answer}</b></span>`:''}</div>`:''}</div>
+      <div class="stats"><div><b class="q-time">0.0</b><span>秒（標準 ${t.par} 秒）</span></div><div><b class="q-err">0</b><span>錯誤步驟</span></div><div><b class="q-score">100</b><span>目前分數</span></div></div>
+      <div class="row"><button class="btn ghost" data-abort>放棄測驗</button><span class="note">完成後會自動結算</span></div>`;}
+    else{const R=this.result;
+      if(R){h+=`<div class="result ${R.failed?'fail':''}"><div class="row" style="align-items:baseline"><span class="big">${R.score}</span><span>分</span><span class="note" style="margin-left:auto">${R.failed?'任務失敗':R.score>=90?'優秀':R.score>=70?'良好':R.score>=60?'及格':'需要再練習'}</span></div>
+        <table><tr><td>任務</td><td>${R.task}</td></tr><tr><td>用時（標準 ${R.par} 秒）</td><td>${R.t.toFixed(1)} 秒・${R.t<=R.par*0.6?'極快':R.t<=R.par?'標準內':'超時'}</td></tr><tr><td>錯誤步驟 ${R.errors.length} 次</td><td>−${R.errPen}</td></tr><tr><td>速度扣分</td><td>−${R.timePen}</td></tr></table>
+        ${R.errors.length?`<ul>${R.errors.map(e=>`<li>${e.t.toFixed(1)}s：${e.msg}</li>`).join('')}</ul>`:''}</div>`;}
+      h+=`<p class="note" style="margin:0 0 8px">按下開始後會隨機設定電路狀態並出題，同時開始計時。錯誤步驟每次扣 10 分；超過標準時間每秒扣 2 分（最多 40）。完成條件：資料正確、其他資料未被破壞、控制訊號都關閉。</p><button class="btn primary" data-start ${p.busy?'disabled':''}>${R?'再測一次':'開始測驗'}</button>`;}
+    b.innerHTML=h;
+    b.querySelectorAll('[data-m]').forEach(x=>x.onclick=()=>this.setMode(x.dataset.m));
+    b.querySelectorAll('[data-demo]').forEach(x=>x.onclick=()=>p.runDemo(p.demos[+x.dataset.demo]));
+    const st=b.querySelector('[data-start]');if(st)st.onclick=()=>this.start();
+    const ab=b.querySelector('[data-abort]');if(ab)ab.onclick=()=>this.abort();
+    b.querySelectorAll('[data-ans]').forEach(x=>x.onclick=()=>this.onAnswer(+x.dataset.ans));
+    this.updLive();}
+  setMode(m){if(this.active||this.p.busy)return;this.p.mode=m;this.p.procEl.hidden=(m==='test');this.result=null;this.render();this.p.syncControls();}
+  start(){const p=this.p;if(p.busy)return;this.task=p.makeTask();this.answer=null;this.latched=false;
+    p.setupTask(this.task);this.errors=[];this.t0=performance.now();this.active=true;this.stable=0;this.result=null;
+    p.log('◆ 測驗開始：'+this.task.text.replace(/<[^>]+>/g,''),'info');p.syncControls();this.render();}
+  error(msg){if(!this.active)return;this.errors.push({t:this.elapsed(),msg});toast('✗ '+msg+'（−10）');this.p.log('✗ '+msg+'（−10）','err');this.updLive();}
+  onAnswer(v){if(!this.active)return;
+    if(!this.latched){this.error('尚未完成讀取（感測放大器還沒有輸出有效的 Dout）就回報');return;}
+    if(this.answer!=null)return;
+    this.answer=v;if(v!==this.task.orig)this.error('回報的資料錯誤（實際儲存的是 '+this.task.orig+'）');
+    this.p.log('回報讀取結果：'+v,'info');this.render();}
+  updLive(){if(!this.active||!this.box)return;const t=this.elapsed();const q=s=>this.box.querySelector(s);
+    if(q('.q-time'))q('.q-time').textContent=t.toFixed(1);if(q('.q-err'))q('.q-err').textContent=this.errors.length;
+    if(q('.q-score'))q('.q-score').textContent=calcScore(t,this.errors.length,this.task.par,false).score;}
+  tick(dt){if(!this.active)return;this.updLive();const p=this.p;
+    const f=p.isFailed?p.isFailed(this.task):null;if(f){this.error(f);this.finish(true);return;}
+    if(p.isDone(this.task)){this.stable+=dt;if(this.stable>0.35)this.finish(false);}else this.stable=0;}
+  finish(failed){if(!this.active)return;const p=this.p;
+    if(!failed&&p.finalCheck)for(const e of p.finalCheck(this.task))this.error(e);
+    const t=this.elapsed();this.active=false;const sc=calcScore(t,this.errors.length,this.task.par,failed);
+    const task=this.task.text.replace(/<[^>]+>/g,'');
+    this.result=Object.assign({t,failed,errors:this.errors,task,par:this.task.par},sc);
+    HIST.push({at:Date.now(),num:p.num,task,t,err:this.errors.length,score:sc.score});saveHist();
+    p.log(`★ 測驗結束：${sc.score} 分（${t.toFixed(1)} 秒，錯誤 ${this.errors.length} 次）`,'ok');toast(failed?'任務失敗':`完成！得分 ${sc.score}`,!failed);
+    p.afterQuiz&&p.afterQuiz();p.syncControls();this.render();}
+  abort(){if(!this.active)return;this.active=false;this.p.log('測驗已放棄','info');this.p.afterQuiz&&this.p.afterQuiz();this.p.syncControls();this.render();}
+}
+
+/* ================= Page base ================= */
+const PAGES={};
+const LEGEND=(dram)=>`<div class="legend"><span><i class="lg off"></i>截止 OFF</span><span><i class="lg on"></i>導通 ON</span><span><i class="lg cond"></i>導通＋電流</span><span><i class="lg grad"></i>電壓 0 → VDD</span>${dram?'<span><i class="lg leak"></i>電容漏電</span>':''}</div>`;
+class Page{
+  constructor(cfg){Object.assign(this,cfg);this.sig={};this.ctl={};this.mode='practice';this.busy=false;this.time=0;this.quiz=new Quiz(this);PAGES[this.id]=this;}
+  mount(root){
+    const sec=H('section',{class:'page',id:this.id},root);
+    sec.innerHTML=`<div class="phead"><div class="kicker">工作項目 ${this.num}</div><h1>${this.title}</h1><p>${this.desc}</p></div>
+    <div class="grid"><div class="col"><div class="card stage"><div class="svgbox"><svg id="svg-${this.id}" viewBox="${this.vb}" class="sch ${this.wide?'wide':''}" role="img" aria-label="${this.title} 電路圖"></svg></div><div class="hint">直接點電路圖操作：點方塊切換 ON／OFF，點小按鈕選擇數值${this.hint?'；'+this.hint:''}。</div>${LEGEND(this.dram)}</div>
+      <div class="card"><h3>即時狀態</h3><div class="statbody"></div></div></div>
+    <aside class="col"><div class="card quizc"></div>
+      <div class="card proc"><h3>正確操作步驟</h3>${this.proc}</div>
+      <div class="card"><h3>操作紀錄</h3><ol class="log"></ol></div></aside></div>`;
+    this.sec=sec;this.svg=sec.querySelector('svg');addDefs(this.svg);this.init();
+    this.buildSvg(this.svg);this.buildStatus(sec.querySelector('.statbody'));
+    this.logEl=sec.querySelector('.log');this.procEl=sec.querySelector('.proc');this.quiz.mount(sec.querySelector('.quizc'));
+    this.syncControls();this.render();}
+  hit(el,fn,label){el.classList.add('hit');el.setAttribute('tabindex','0');el.setAttribute('role','button');if(label)el.setAttribute('aria-label',label);
+    const go=e=>{e.stopPropagation();if(!this.busy)fn();};el.addEventListener('click',go);el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();go(e);}});
+    (this.hits=this.hits||[]).push(el);return el;}
+  tog(el,name,label){return this.hit(el,()=>this.user(name,this.sig[name]?0:1),label+'（點擊切換）');}
+  pills(par,x,y,name,label,opts,w=36){const g=S('g',{},par);if(label)T(g,x-8,y+11,label,'plabel');
+    const btns=opts.map((o,i)=>{const pg=S('g',{class:'pill'},g);S('rect',{x:x+i*(w+4),y,width:w,height:22,rx:6},pg);T(pg,x+i*(w+4)+w/2,y+11,o.l);
+      this.hit(pg,()=>this.user(name,o.v),`${label} ${o.l}`);return[o.v,pg];});this.ctl[name]={type:'pills',btns};return g;}
+  group(box,t){H('div',{class:'cgroup'},box,t);}
+  sw(box,name,code,label,hint){const b=H('button',{class:'sw',type:'button','aria-pressed':'false'},box,`<span class="sname"><code>${code}</code>${label}</span><span class="shint">${hint}</span><span class="knob"><i></i></span>`);
+    b.onclick=()=>this.user(name,this.sig[name]?0:1);this.ctl[name]={type:'sw',el:b};}
+  seg(box,name,label,opts,hint=''){const w=H('div',{class:'segw'},box,`<div class="seglabel">${label}${hint?`<small>${hint}</small>`:''}</div>`);const s=H('div',{class:'seg',role:'group'},w);
+    const btns=opts.map(o=>{const b=H('button',{type:'button'},s);b.textContent=o.l;b.onclick=()=>this.user(name,o.v);return[o.v,b];});this.ctl[name]={type:'seg',btns};}
+  kv(box,label,wide){const d=H('div',{class:'kv'+(wide?' wide':'')},box,`<span>${label}</span><b>—</b>`);return d.querySelector('b');}
+  meter(box,label){const d=H('div',{class:'kv wide'},box,`<span>${label}</span><div class="meter"><div class="th2" style="left:30%;width:40%"></div><div class="f"></div><div class="th"></div></div><div class="mlab"><span>0 V</span><span>VDD/2 判斷門檻（斜線區＝資料不可靠）</span><span>1.2 V</span></div>`);
+    const f=d.querySelector('.f');return v=>{f.style.width=(clamp(v,0,1)*100).toFixed(1)+'%';};}
+  leakSlider(box,model,def){const d=H('div',{class:'setting kv wide'},box,`<label><span>漏電時間常數 τ（越小漏得越快）</span><b class="mono">${def} s</b></label><input type="range" min="4" max="60" step="1" value="${def}" id="leak-${this.id}" aria-label="漏電時間常數">`);
+    const inp=d.querySelector('input'),out=d.querySelector('b');inp.oninput=()=>{model.leakTau=+inp.value;out.textContent=inp.value+' s';};
+    this.leakInp=inp;this.leakOut=out;model.leakTau=def;}
+  setLeak(v){this.m.leakTau=v;if(this.leakInp){this.leakInp.value=v;this.leakOut.textContent=v+' s';}}
+  syncControls(){const lock=this.busy;for(const[n,c]of Object.entries(this.ctl)){
+      if(c.type==='sw'){c.el.classList.toggle('on',!!this.sig[n]);c.el.setAttribute('aria-pressed',this.sig[n]?'true':'false');c.el.disabled=lock;}
+      else if(c.type==='pills')c.btns.forEach(([v,b])=>{b.classList.toggle('on',this.sig[n]===v);b.setAttribute('aria-pressed',this.sig[n]===v?'true':'false');});
+      else c.btns.forEach(([v,b])=>{b.classList.toggle('on',this.sig[n]===v);b.disabled=lock;});}
+    (this.hits||[]).forEach(h=>h.classList.toggle('locked',lock));
+    if(this.leakInp)this.leakInp.disabled=this.quiz.active;if(this.onSync)this.onSync();}
+  user(n,v){if(this.busy)return;this.act(n,v);}
+  act(n,v){if(this.sig[n]===v)return;
+    if(this.quiz.active){const errs=this.rules(n,v,this.quiz.task)||[];for(const e of errs)this.quiz.error(e);}
+    const o=this.sig[n];this.sig[n]=v;if(this.onSig)this.onSig(n,v,o);
+    this.log(`${this.names[n]||n} → <b>${this.fmt?this.fmt(n,v):v}</b>`);this.syncControls();}
+  log(msg,cls=''){if(!this.logEl)return;const li=H('li',cls?{class:cls}:{},null,`<span class="lt">${this.time.toFixed(1)}s</span>${msg}`);this.logEl.prepend(li);while(this.logEl.children.length>80)this.logEl.lastChild.remove();}
+  async runDemo(d){if(this.busy||this.quiz.active)return;this.busy=true;this.syncControls();this.quiz.render();this.log('▶ 示範：'+d.l,'info');
+    try{await d.fn.call(this);}finally{this.busy=false;this.syncControls();this.quiz.render();this.log('■ 示範結束','info');}}
+  async d(n,v,w=650){this.act(n,v);await sleep(w);}
+  frame(dt){this.time+=dt;this.step(dt);this.render();this.quiz.tick(dt);}
+}
+
+/* TTL logic levels (VCC = 5 V): VIL(max) = 0.8 V, VIH(min) = 2.0 V */
+const TTL={V:5,VIL:0.8,VIH:2.0,lo:0.8/5,hi:2.0/5,bit(v){return v*5>=2.0?'1':v*5<=0.8?'0':'?';},name(v){const b=this.bit(v);return b==='?'?'未知（0.8～2.0 V 之間）':b==='1'?'1（≥ 2.0 V）':'0（≤ 0.8 V）';}};
+const fT=v=>(v*TTL.V).toFixed(2)+' V';
+/* =========================================================
+   工作項目 1：DRAM 基本記憶胞
+   ========================================================= */
+new Page({id:'p1',num:1,dram:true,title:'DRAM 基本記憶胞（1T1C）',
+  desc:'一顆 NMOS 存取電晶體 M 加一顆儲存電容 Cs。字元線 WL 控制電晶體開關，位元線 BL 把電荷送進或帶出電容。本頁以 <b>TTL 準位</b>（VCC = 5 V）判讀電容電壓：<b>≥ 2.0 V（V<sub>IH</sub>）為 1</b>、<b>≤ 0.8 V（V<sub>IL</sub>）為 0</b>、介於 0.8～2.0 V 之間為<b>未知</b>。電晶體關閉後電荷仍會經由接面與次臨界電流慢慢漏掉，1 會逐漸掉進未知區。',
+  vb:'0 0 600 380',
+  names:{WL:'字元線 WL',BL:'位元線 BL'},
+  fmt(n,v){if(n==='BL')return v==='F'?'預充 2.5 V 後浮接':v?'驅動 5 V（1）':'驅動 0 V（0）';return v?'1（升壓 Vpp，電晶體導通）':'0（電晶體截止）';},
+  proc:`<h4>TTL 判讀準位</h4><ol><li><code>2.0～5 V</code>：邏輯 1（V<sub>IH</sub> ≥ 2.0 V）</li><li><code>0.8～2.0 V</code>：未知（不保證被判成 0 或 1）</li><li><code>0～0.8 V</code>：邏輯 0（V<sub>IL</sub> ≤ 0.8 V）</li></ol>
+  <h4>寫入</h4><ol><li>把位元線 <code>BL</code> 設成要寫入的值（0 V 或 5 V）</li><li>字元線 <code>WL = 1</code>，電晶體導通，電容開始充／放電</li><li>等電容電壓到達 0 V 或 5 V（電晶體回到綠色）</li><li><code>WL = 0</code>，電晶體截止，資料保存在電容上</li></ol>
+  <h4>讀取（觀念）</h4><ol><li><code>BL</code> 預充到 2.5 V 後浮接</li><li><code>WL = 1</code>：電容與位元線寄生電容 C<sub>BL</sub> 電荷分享，BL 只變化約 ±0.6 V</li><li>電容電荷被分掉，資料已被破壞（破壞性讀取），需要感測放大器放大並回寫，見工作項目 2</li></ol>
+  <p>電晶體截止時電容仍持續漏電（紅色虛線）。存 1 的電容電壓掉到 2.0 V 以下就進入未知區，資料不再可靠，所以 DRAM 必須定期更新（refresh）。</p>`,
+  demos:[{l:'寫入 1',fn:async function(){await this.d('BL',1,700);await this.d('WL',1,1300);await this.d('WL',0,300);}},
+         {l:'寫入 0',fn:async function(){await this.d('BL',0,700);await this.d('WL',1,1300);await this.d('WL',0,300);}},
+         {l:'讀取（電荷分享）',fn:async function(){await this.d('BL','F',800);const b0=this.m.bl[0];await this.d('WL',1,1400);
+            const dv=(this.m.bl[0]-b0)*TTL.V;this.log(`BL 由 2.5 V 變化 ${dv>=0?'+':''}${dv.toFixed(3)} V，電容電荷已被分掉（破壞性讀取）`,'info');await this.d('WL',0,300);}}],
+  init(){this.m=new DramModel(1,1);this.m.v[0][0]=1;this.m.bl[0]=0.5;this.sig={WL:0,BL:'F'};this.preT=0;},
+  buildSvg(svg){const g=S('g',{},svg),r=this.r={};
+    this.pills(g,96,8,'BL','BL 來源',[{v:0,l:'0 V'},{v:1,l:'5 V'},{v:'F',l:'浮接'}],46);
+
+    r.bl=S('path',{d:'M160,40 V312',class:'wire thick'},g);
+    r.cbl=S('path',{d:'M140,312 H180',class:'plate'},g);S('path',{d:'M140,322 H180 M160,322 V332 M149,332 H171 M153,336 H167 M157,340 H163',class:'gndsym'},g);
+    T(g,132,312,'C_BL 寄生電容','muted',{'text-anchor':'end'});T(g,132,328,'（約 3 × Cs）','muted',{'text-anchor':'end'});
+    T(g,168,62,'BL','lbl');r.blv=T(g,168,78,'','mono muted');
+    r.wl=S('path',{d:'M100,98 H452',class:'wire thick'},g);r.wld=block(g,4,76,96,44,'WL 驅動','字元線');this.tog(r.wld.w,'WL','字元線 WL');r.wlv=T(g,104,90,'','mono muted');
+    r.cell=drawDramCell(g,160,60,1.9,svg.id);
+    /* TTL level gauge: y=140 (5 V) .. y=300 (0 V) */
+    const gy=v=>300-160*v/5,gx=480;T(g,gx-4,126,'TTL 準位','lbl');
+    S('rect',{x:gx,y:gy(5),width:18,height:gy(2)-gy(5),style:'fill:color-mix(in oklab,var(--high) 35%,transparent);stroke:var(--line)'},g);
+    S('rect',{x:gx,y:gy(2),width:18,height:gy(0.8)-gy(2),style:'fill:color-mix(in oklab,var(--warn) 35%,transparent);stroke:var(--line)'},g);
+    S('rect',{x:gx,y:gy(0.8),width:18,height:gy(0)-gy(0.8),style:'fill:color-mix(in oklab,var(--low) 35%,transparent);stroke:var(--line)'},g);
+    T(g,gx+64,gy(3.5)+4,'1','lbl');T(g,gx+64,gy(1.4)+4,'未知','lbl');T(g,gx+64,gy(0.4)+4,'0','lbl');
+    for(const[vv,t]of[[5,'5V'],[2,'2.0V'],[0.8,'0.8V'],[0,'0V']])T(g,gx+24,gy(vv)+4,t,'tl');
+    r.gm=S('path',{d:'M0,0 L-9,-6 L-9,6 Z',style:'fill:var(--ink)'},g);r.gml=S('path',{d:'M0,0 H18',style:'stroke:var(--ink);stroke-width:2.5'},g);r.gy=gy;r.gx=gx;
+    },
+  buildStatus(box){this.k={bl:this.kv(box,'位元線 BL'),wl:this.kv(box,'字元線 WL'),vc:this.kv(box,'電容電壓 Vc'),bit:this.kv(box,'TTL 判讀結果'),st:this.kv(box,'目前狀態',true)};
+    const d=H('div',{class:'kv wide'},box,`<span>電容電壓（TTL 準位）</span><div class="meter"><div class="th2" style="left:16%;width:24%"></div><div class="f"></div><div class="th" style="left:16%"></div><div class="th" style="left:40%"></div></div><div class="mlab" style="position:relative;height:14px"><span style="position:absolute;left:0">0 V</span><span style="position:absolute;left:16%;transform:translateX(-50%)">0.8</span><span style="position:absolute;left:40%;transform:translateX(-50%)">2.0</span><span style="position:absolute;right:0">5 V</span></div><div class="note">0～0.8 V＝0　0.8～2.0 V（斜線）＝未知　2.0～5 V＝1</div>`);
+    const f=d.querySelector('.f');this.mt=v=>{f.style.width=(clamp(v,0,1)*100).toFixed(1)+'%';};this.leakSlider(box,this.m,20);},
+  onSig(n,v){if(n==='BL'&&v==='F')this.preT=0.25;},
+  step(dt){const m=this.m;m.wl[0]=this.sig.WL;if(this.preT>0)this.preT-=dt;m.drive[0]=this.sig.BL==='F'?(this.preT>0?0.5:null):this.sig.BL;m.step(dt);},
+  render(){const m=this.m,r=this.r,v=m.v[0][0],bl=m.bl[0],wl=this.sig.WL;
+    updDramCell(r.cell,v,bl,wl,TTL);setStroke(r.bl,bl);setStroke(r.cbl,bl);setStroke(r.wl,wl);
+    const yy=r.gy(clamp(v,0,1)*5).toFixed(1);r.gm.setAttribute('transform',`translate(${r.gx},${yy})`);r.gml.setAttribute('transform',`translate(${r.gx},${yy})`);
+    setTxt(r.blv,fT(bl));setTxt(r.wlv,wl?'Vpp（升壓）':'0 V');r.wld.set(wl?'on':'',wl?'ON':'OFF');
+    setTxt(this.k.bl,fT(bl)+(this.sig.BL==='F'?'（浮接）':''));setTxt(this.k.wl,wl?'1':'0');setTxt(this.k.vc,fT(v));
+    setTxt(this.k.bit,TTL.name(v));
+    setTxt(this.k.st,wl?(Math.abs(bl-v)>0.02?(this.sig.BL==='F'?'電荷分享中（破壞性讀取）':'寫入中：電容充／放電'):'電晶體導通，電容與 BL 等電位'):(TTL.bit(v)==='?'?'電荷流失：已掉進未知區，需要更新':v>0.06?'保存中：電晶體截止，電容慢慢漏電':'保存中：電容無電荷（0）'));
+    this.mt(v);},
+  makeTask(){const X=rnd2();return{type:'write',X,par:8,text:`把資料 <b>${X}</b> 寫入這個 DRAM 記憶胞，並讓它保存下來`};},
+  setupTask(t){this.setLeak(30);this.m.v[0][0]=1-t.X;this.sig.WL=0;this.sig.BL=1-t.X;this.m.bl[0]=1-t.X;this.preT=0;},
+  rules(n,v,t){const e=[],X=t.X,vc=this.m.v[0][0];
+    if(n==='WL'&&v===1&&this.sig.BL!==X)e.push(`開啟字元線前，位元線應先驅動到要寫入的值（BL = ${X?'5 V':'0 V'}）`);
+    if(n==='BL'&&this.sig.WL&&v!==X)e.push('字元線開啟時把位元線改成錯誤值，會把錯誤資料寫進電容');
+    if(n==='WL'&&v===0&&Math.abs(vc-X)>0.12)e.push(TTL.bit(vc)===String(X)?'電容尚未充／放電完成就關閉字元線':`電容電壓 ${fT(vc)} 還不在 TTL 的 ${X} 準位就關閉字元線`);
+    return e;},
+  isDone(t){return!this.sig.WL&&Math.abs(this.m.v[0][0]-t.X)<0.15;}
+});
+
+/* =========================================================
+   工作項目 2：DRAM 單位元儲存介面
+   ========================================================= */
+new Page({id:'p2',num:2,dram:true,title:'DRAM 單位元的儲存介面',
+  desc:'在記憶胞外加上周邊電路：寫入驅動器（WE 致能時把 D_in 送上位元線）、預充／等化電路（把位元線拉到 VDD/2）、感測放大器（把電荷分享產生的小訊號放大成 0 或 VDD，並同時回寫電容）。讀取與更新（refresh）都靠感測放大器完成。',
+  vb:'0 0 600 530',
+  names:{D:'資料輸入 D_in',WE:'寫入致能 WE',PRE:'預充 PRE',WL:'字元線 WL',SAE:'感測放大致能 SAE'},
+  fmt(n,v){return String(v);},
+  proc:`<h4>寫入</h4><ol><li>設定 <code>D_in</code></li><li><code>WE = 1</code>（寫入驅動器把 BL 拉到 D_in）</li><li><code>WL = 1</code>，等電容充／放電完成</li><li><code>WL = 0</code></li><li><code>WE = 0</code></li></ol>
+  <h4>讀取／更新（refresh）</h4><ol><li><code>PRE = 1</code> 把 BL 預充到 VDD/2，再 <code>PRE = 0</code>（浮接）</li><li><code>WL = 1</code>，等電荷分享完成（BL 偏離 VDD/2）</li><li><code>SAE = 1</code>：放大成 0／VDD，Dout 輸出，同時回寫電容</li><li>等電容回到滿電位後 <code>WL = 0</code></li><li><code>SAE = 0</code></li></ol>
+  <p>更新就是「讀一次但不輸出」。注意預充不可和寫入驅動器或感測放大器同時開，也不可在字元線開啟時預充。</p>`,
+  demos:[{l:'寫入 D_in',fn:async function(){await this.d('WE',1);await this.d('WL',1,1300);await this.d('WL',0,400);await this.d('WE',0,300);}},
+         {l:'讀取',fn:async function(){await this.d('PRE',1,600);await this.d('PRE',0,400);await this.d('WL',1,900);await this.d('SAE',1,1200);this.log('Dout = '+this.dout,'info');await this.d('WL',0,400);await this.d('SAE',0,300);}},
+         {l:'切換 D_in',fn:async function(){await this.d('D',this.sig.D?0:1,200);}}],
+  init(){this.m=new DramModel(1,1);this.m.v[0][0]=1;this.m.bl[0]=0.5;this.sig={D:1,WE:0,PRE:0,WL:0,SAE:0};this.sa=null;this.dout='—';this.ar=false;this.arT=0;this.flash=0;this.bad=false;},
+  buildSvg(svg){const g=S('g',{},svg),r=this.r={};const X=320;
+    r.bl=S('path',{d:`M${X},40 V440`,class:'wire thick'},g);T(g,X+8,36,'BL','lbl');r.blv=T(g,X+30,36,'','mono muted');
+    r.wd=block(g,40,50,200,62,'寫入驅動器','WE・D_in');r.swd=S('path',{d:`M240,81 H${X}`,class:'wire'},g);
+    r.pre=block(g,40,132,200,62,'預充／等化電路','PRE → VDD/2');r.spre=S('path',{d:`M240,163 H${X}`,class:'wire'},g);
+    r.sa=block(g,40,214,200,62,'感測放大器 SA','SAE・參考 VDD/2');r.ssa=S('path',{d:`M240,245 H${X}`,class:'wire'},g);
+    r.wld=block(g,40,318,150,50,'字元線驅動器','WL');
+    this.tog(r.wd.w,'WE','寫入致能 WE');this.tog(r.pre.w,'PRE','預充 PRE');this.tog(r.sa.w,'SAE','感測放大致能 SAE');this.tog(r.wld.w,'WL','字元線 WL');
+    this.pills(g,100,18,'D','D_in',[{v:0,l:'0'},{v:1,l:'1'}]);
+    for(const y of[81,163,245])S('circle',{cx:X,cy:y,r:3.6,class:'dot'},g);
+    S('path',{d:'M40,245 H18',class:'wire'},g);T(g,4,236,'Dout','lbl');
+    r.wl=S('path',{d:`M190,343 H560`,class:'wire thick'},g);
+    r.cell=drawDramCell(g,X,311,1.6,svg.id);},
+  buildStatus(box){this.k={bl:this.kv(box,'位元線 BL'),vc:this.kv(box,'電容電壓 Vc'),bit:this.kv(box,'電容內資料'),dout:this.kv(box,'Dout（感測放大器輸出）')};
+    this.mt=this.meter(box,'電容電荷量');this.leakSlider(box,this.m,20);
+    const c=H('label',{class:'chk kv wide'},box,'<input type="checkbox" id="ar-p2"> 自動更新（記憶體控制器每 3 秒在閒置時自動 refresh）');
+    this.arChk=c.querySelector('input');this.arChk.onchange=()=>{this.ar=this.arChk.checked;};},
+  onSync(){if(this.arChk)this.arChk.disabled=this.quiz.active;},
+  onSig(n,v){if(n==='SAE'&&v===1){const d=this.m.bl[0]-0.5;this.sa=Math.abs(d)<0.006?rnd2():(d>0?1:0);if(this.sig.WE)this.sa=this.sig.D;this.dout=this.sa;
+      if(this.quiz.active)this.quiz.latched=true;this.log('感測放大器鎖存：Dout = '+this.dout,'info');}
+    if(n==='SAE'&&v===0)this.sa=null;
+    if((n==='WE'||n==='D')&&this.sig.WE&&this.sig.SAE){this.sa=this.sig.D;this.dout=this.sa;}
+    if(this.quiz.active&&n==='WL'&&v===1)this.quiz.wlOpened=true;},
+  drives(){const s=this.sig,src=[];if(s.WE)src.push(s.D);if(s.PRE)src.push(0.5);if(s.SAE&&this.sa!=null&&!s.WE)src.push(this.sa);
+    return{d:src.length?src.reduce((a,b)=>a+b,0)/src.length:null,bad:src.length>1};},
+  step(dt){const m=this.m;m.wl[0]=this.sig.WL;const dr=this.drives();m.drive[0]=dr.d;this.bad=dr.bad;m.step(dt);
+    if(this.ar&&!this.sig.WL&&!this.quiz.active){this.arT+=dt;if(this.arT>3){this.arT=0;m.v[0][0]=m.v[0][0]>0.5?1:0;this.flash=0.5;this.log('自動更新：電容已回寫','info');}}
+    if(this.flash>0)this.flash-=dt;},
+  render(){const m=this.m,r=this.r,s=this.sig,v=m.v[0][0],bl=m.bl[0];
+    updDramCell(r.cell,v,bl,s.WL);setCls(r.cell.box,this.flash>0?'cellbox flash':'cellbox');
+    setStroke(r.bl,bl);setStroke(r.wl,s.WL);setTxt(r.blv,fV(bl));
+    setStroke(r.swd,s.WE?s.D:0.5);setStroke(r.spre,s.PRE?0.5:bl);setStroke(r.ssa,s.SAE?bl:0.5);
+    const bad=this.bad?'bad':'';
+    r.wd.set(s.WE?(bad||'on'):'',s.WE?'ON':'OFF',`WE・D_in = ${s.D}`);
+    r.pre.set(s.PRE?(bad||'on'):'',s.PRE?'ON':'OFF');
+    r.sa.set(s.SAE?(bad||'on'):'',s.SAE?'ON':'OFF',`SAE・Dout = ${this.dout}`);
+    r.wld.set(s.WL?'on':'',s.WL?'ON':'OFF');
+    setTxt(this.k.bl,fV(bl)+(this.bad?'（衝突！）':''));setTxt(this.k.vc,fV(v));setTxt(this.k.bit,(v>0.5?'1':'0')+((v>0.3&&v<0.7)?'（需更新）':''));setTxt(this.k.dout,String(this.dout));
+    this.mt(v);},
+  makeTask(){const k=Math.random();const X=rnd2();
+    if(k<0.4)return{type:'write',X,par:12,text:`用寫入介面把資料 <b>${X}</b> 存進記憶胞`};
+    if(k<0.75)return{type:'read',orig:X,par:15,text:`讀出記憶胞目前儲存的資料並回報，讀完後資料必須仍然完整（要回寫）`};
+    return{type:'refresh',orig:1,par:14,text:`記憶胞存的是 <b>1</b>，但電荷正在流失。請在資料遺失前完成<b>更新（refresh）</b>`};},
+  setupTask(t){const m=this.m;this.setLeak(30);this.ar=false;if(this.arChk)this.arChk.checked=false;
+    Object.assign(this.sig,{WE:0,PRE:0,WL:0,SAE:0,D:rnd2()});this.sa=null;this.dout='—';m.bl[0]=rnd2();
+    m.v[0][0]=t.type==='write'?1-t.X:t.type==='read'?t.orig:0.76;this.quiz.wlOpened=false;},
+  afterQuiz(){},
+  rules(n,v,t){const e=[],s=this.sig,m=this.m,vc=m.v[0][0],bl=m.bl[0];
+    if(v===1&&n==='PRE'&&s.WL)e.push('字元線開啟時預充，會把電容拉到 VDD/2，資料被破壞');
+    if(v===1&&n==='WL'&&s.PRE)e.push('預充還沒關閉就開啟字元線，電容會被拉到 VDD/2');
+    if(v===1&&((n==='PRE'&&(s.WE||s.SAE))||((n==='WE'||n==='SAE')&&s.PRE)))e.push('預充電路與寫入驅動器／感測放大器同時驅動位元線（衝突）');
+    if(t.type==='write'){
+      if(n==='WL'&&v===1&&!(s.WE&&s.D===t.X))e.push(`開啟字元線前要先設定 D_in = ${t.X} 並啟動寫入驅動器（WE = 1）`);
+      if(n==='D'&&s.WE&&s.WL)e.push('寫入中改變 D_in，會寫入錯誤資料');
+      if(n==='WE'&&v===1&&s.WL&&s.D!==t.X)e.push('D_in 設定錯誤就開始寫入');
+      if(n==='WL'&&v===0&&Math.abs(vc-t.X)>0.12)e.push('電容尚未充／放電完成就關閉字元線');
+    }else{
+      if(n==='WE'&&v===1)e.push('讀取／更新時不可啟動寫入驅動器，會覆蓋原資料');
+      if(n==='WL'&&v===1&&!s.PRE&&!(Math.abs(bl-0.5)<0.03&&!s.WE&&!s.SAE))e.push('開啟字元線前必須先把位元線預充到 VDD/2 並放開（PRE 1→0）');
+      if(n==='SAE'&&v===1&&!s.PRE){if(!s.WL)e.push('要先開啟字元線讓電荷分享，再啟動感測放大器');else if(Math.abs(bl-vc)>0.03)e.push('電荷分享尚未完成就啟動感測放大器');}
+      if(n==='WL'&&v===0){if(!s.SAE)e.push('沒有經過感測放大器回寫（restore）就關閉字元線，電容資料被破壞');else if(this.sa!=null&&Math.abs(vc-this.sa)>0.12)e.push('回寫尚未完成就關閉字元線');}
+    }
+    return e;},
+  isDone(t){const s=this.sig,vc=this.m.v[0][0],idle=!s.WL&&!s.WE&&!s.SAE;
+    if(t.type==='write')return idle&&Math.abs(vc-t.X)<0.15;
+    if(t.type==='read')return idle&&this.quiz.answer!=null;
+    return idle&&this.quiz.latched&&vc>0.88;},
+  isFailed(t){if(t.type==='refresh'&&!this.sig.WL&&this.m.v[0][0]<0.5)return '資料已經因漏電遺失（電容電壓低於 VDD/2）';return null;},
+  finalCheck(t){const vc=this.m.v[0][0];if(t.type==='read'&&(vc>0.5?1:0)!==t.orig)return['讀取後電容資料遺失（沒有正確回寫）'];if(t.type==='read'&&Math.abs(vc-t.orig)>0.15)return['讀取後電容沒有回到滿電位（回寫不完整）'];return[];}
+});
+
+/* =========================================================
+   工作項目 2（變化型）：3T DRAM 記憶胞存取介面（課本圖 c）
+   ========================================================= */
+new Page({id:'p2b',num:2,dram:true,title:'DRAM 3T 記憶胞存取介面',
+  desc:'課本圖 (c) 的三電晶體（3T）動態記憶胞。資料以電荷存在 Q2 閘極電容 C<sub>gs</sub> 上：寫入時 Q1 把資料輸入線接到 C<sub>gs</sub>；讀出時先用 Q4 把資料輸出線（寄生電容 C<sub>R</sub>）預先充電到 V<sub>DD</sub>，再開 Q3。若 C<sub>gs</sub> 存 1，Q2 導通把輸出線放電到 0；存 0 則輸出線維持 1，所以<b>讀出是反相的</b>。讀出不會改動 C<sub>gs</sub>（非破壞性讀取），但 C<sub>gs</sub> 仍會漏電，需要定期更新。電壓以 TTL 準位判讀（V<sub>DD</sub> = 5 V，≥ 2.0 V 為 1、≤ 0.8 V 為 0、中間為未知）。',
+  vb:'0 0 680 470',
+  names:{DIN:'資料輸入',W:'寫入控制線 Write',R:'讀出控制線 Read',P:'預先充電'},
+  fmt(n,v){if(n==='DIN')return v?'5 V（1）':'0 V（0）';return String(v);},
+  hint:'資料輸出線是反相的：Cgs 存 1 → 輸出 0',
+  proc:`<h4>寫入</h4><ol><li>設定資料輸入（0 V 或 5 V）</li><li>寫入控制線 <code>Write = 1</code>，Q1 導通，C<sub>gs</sub> 充／放電</li><li>等 C<sub>gs</sub> 到達 0 V 或 5 V</li><li><code>Write = 0</code>，Q1 截止，資料保存在 C<sub>gs</sub></li></ol>
+  <h4>讀出</h4><ol><li><code>預先充電 = 1</code>：Q4 把資料輸出線（C<sub>R</sub>）充到 V<sub>DD</sub></li><li><code>預先充電 = 0</code>（輸出線浮接）</li><li>讀出控制線 <code>Read = 1</code>，Q3 導通</li><li>Q2 導通（存 1）時輸出線放電到 0；Q2 截止（存 0）時輸出線維持 1</li><li>記下輸出後 <code>Read = 0</code>；儲存資料 = 輸出的反相</li></ol>
+  <p>預先充電和 Read 不可同時為 1，否則 V<sub>DD</sub> 經 Q4、Q3、Q2 直接接地。讀出前一定要先預先充電，否則輸出線上的舊電壓會被誤認為資料。</p>`,
+  demos:[{l:'寫入 1',fn:async function(){await this.d('DIN',1,500);await this.d('W',1,1300);await this.d('W',0,300);}},
+         {l:'寫入 0',fn:async function(){await this.d('DIN',0,500);await this.d('W',1,1300);await this.d('W',0,300);}},
+         {l:'讀出',fn:async function(){await this.d('P',1,700);await this.d('P',0,400);await this.d('R',1,1200);const o=TTL.bit(this.vo);
+            this.log(`資料輸出線 = ${fT(this.vo)}（${o}）→ 儲存資料 = ${o==='?'?'?':1-o}`,'info');await this.d('R',0,300);}}],
+  init(){this.m={leakTau:20};this.vs=1;this.vo=0.5;this.sig={DIN:1,W:0,R:0,P:0};this.rt=0;this.readOk=false;},
+  g2(){return sigm((this.vs-0.3)/0.04);},
+  buildSvg(svg){const g=S('g',{},svg),r=this.r={};const W=(d,c='wire')=>S('path',{d,class:c},g);const dot=(x,y)=>S('circle',{cx:x,cy:y,r:3.6,class:'dot'},g);
+    // control lines
+    r.rd=W('M118,60 H480','wire thick');r.rb=block(g,4,40,114,40,'Read','讀出控制線');this.tog(r.rb.w,'R','讀出控制線 Read');
+    r.wr=W('M118,380 H420','wire thick');r.wb=block(g,4,360,114,40,'Write','寫入控制線');this.tog(r.wb.w,'W','寫入控制線 Write');
+    // data in
+    r.din=W('M160,40 V405','wire thick');this.pills(g,222,414,'DIN','資料輸入',[{v:0,l:'0 V'},{v:1,l:'5 V'}],44);
+    r.dinw=W('M160,250 H208');dot(160,250);
+    r.Q1=mos(g,230,250,'hb','n');T(g,230,214,'Q1','lbl',{'text-anchor':'middle'});r.q1g=W('M230,276 V380');dot(230,380);
+    // storage node
+    r.sn=W('M252,250 H354 M300,250 V292');dot(300,250);
+    r.cfill=S('rect',{x:286,y:294,width:28,height:0,class:'capfill'},g);
+    r.ctop=S('path',{d:'M282,292 H318',class:'plate'},g);S('path',{d:'M282,306 H318',class:'plate'},g);
+    S('path',{d:'M300,306 V318 M290,318 H310 M294,322 H306 M298,326 H302',class:'gndsym'},g);T(g,278,302,'Cgs','tl',{'text-anchor':'end'});
+    r.leak=S('path',{d:'M320,296 C332,302 332,316 324,324',class:'leak','marker-end':`url(#${svg.id}-ar)`},g);
+    r.snv=T(g,262,240,'','mono muted',{'text-anchor':'middle'});
+    const bb=S('g',{class:'bitb'},g);S('rect',{x:196,y:282,width:28,height:24,rx:6},bb);r.bit=T(bb,210,294.5,'0');r.bitb=bb;
+    // Q3 / Q2 stack
+    r.Q3=mos(g,380,170,'vl','n');T(g,400,174,'Q3','lbl');r.q3g=W('M354,170 H320 V60');dot(320,60);
+    r.Q2=mos(g,380,250,'vl','n');T(g,400,254,'Q2','lbl');
+    r.mid=W('M380,192 V228');r.q2s=W('M380,272 V330');S('path',{d:'M368,330 H392 M372,334 H388 M376,338 H384',class:'gndsym'},g);
+    // data out
+    r.dout=W('M470,40 V405','wire thick');r.q3d=W('M380,148 V120 H538');dot(470,120);
+    r.cr=W('M470,262 H530 V292');dot(470,262);r.crp=S('path',{d:'M512,292 H548',class:'plate'},g);S('path',{d:'M512,306 H548',class:'plate'},g);
+    S('path',{d:'M530,306 V318 M520,318 H540 M524,322 H536 M528,326 H532',class:'gndsym'},g);T(g,556,304,'C_R','tl');
+    T(g,470,428,'資料輸出','lbl',{'text-anchor':'middle'});r.dov=T(g,478,36,'','mono muted');
+    /* data-out display */
+    W('M470,384 H500');dot(470,384);
+    const ob=S('g',{},g);r.obox=S('rect',{x:500,y:344,width:170,height:112,rx:10,class:'cellbox'},ob);r.obox.style.stroke='var(--line)';
+    T(ob,512,364,'資料輸出 Dout','bs');r.oled=S('circle',{cx:524,cy:392,r:11},ob);
+    r.obit=T(ob,544,400,'—','mono',{style:'font-size:26px;font-weight:600'});r.ov=T(ob,600,398,'','vt');
+    S('path',{d:'M510,414 H660',style:'stroke:var(--line);stroke-width:1'},ob);
+    T(ob,512,432,'讀出資料（反相）','bs');r.rbit=T(ob,512,450,'—','mono',{style:'font-size:14px;font-weight:600'});
+    // Q4 precharge
+    r.Q4=mos(g,560,120,'hb','p');T(g,560,92,'Q4','lbl',{'text-anchor':'middle'});r.vdd=W('M582,120 H620 V30');S('path',{d:'M613,36 L620,24 L627,36 Z',style:'fill:var(--ink)'},g);T(g,632,30,'VDD','lbl');
+    r.q4g=W('M560,146 V180');r.pb=block(g,500,180,120,44,'預先充電','');this.tog(r.pb.w,'P','預先充電');
+    // flows
+    r.f1=W('M160,250 H300','flow');r.f2=W('M470,120 H380 V330','flow');r.f3=W('M620,120 H470','flow');[r.f1,r.f2,r.f3].forEach(f=>f.style.display='none');},
+  buildStatus(box){this.k={cs:this.kv(box,'C<sub>gs</sub> 電壓（儲存節點）'),bit:this.kv(box,'儲存資料（TTL）'),vo:this.kv(box,'資料輸出線'),rd:this.kv(box,'讀出結果（輸出反相）'),st:this.kv(box,'目前狀態',true)};
+    const d=H('div',{class:'kv wide'},box,`<span>C<sub>gs</sub> 電壓（TTL 準位）</span><div class="meter"><div class="th2" style="left:16%;width:24%"></div><div class="f"></div><div class="th" style="left:16%"></div><div class="th" style="left:40%"></div></div><div class="mlab" style="position:relative;height:14px"><span style="position:absolute;left:0">0 V</span><span style="position:absolute;left:16%;transform:translateX(-50%)">0.8</span><span style="position:absolute;left:40%;transform:translateX(-50%)">2.0</span><span style="position:absolute;right:0">5 V</span></div>`);
+    const f=d.querySelector('.f');this.mt=v=>{f.style.width=(clamp(v,0,1)*100).toFixed(1)+'%';};this.leakSlider(box,this.m,20);},
+  onSig(n,v){if(n==='R'&&v===1){this.rt=0;this.readOk=this.vo>0.9&&!this.sig.P;}},
+  step(dt){const s=this.sig,n=Math.max(1,Math.ceil(dt/0.004)),h=dt/n;this.bad=s.P&&s.R&&this.g2()>0.5;
+    for(let i=0;i<n;i++){if(s.W)this.vs+=(s.DIN-this.vs)*Math.min(1,h/0.2);this.vs-=this.vs*h/this.m.leakTau;
+      const dis=s.R?this.g2()*8:0,pre=s.P?25:0;this.vo+=(-this.vo*dis+(1-this.vo)*pre)*h;}
+    if(s.R){this.rt+=dt;if(this.readOk&&this.rt>0.35&&this.quiz.active)this.quiz.latched=true;}},
+  render(){const r=this.r,s=this.sig,vs=this.vs,vo=this.vo,g2=this.g2();
+    setStroke(r.rd,s.R);setStroke(r.q3g,s.R);setStroke(r.wr,s.W);setStroke(r.q1g,s.W);setStroke(r.din,s.DIN);setStroke(r.dinw,s.DIN);
+    setStroke(r.sn,vs);setStroke(r.ctop,vs);setStroke(r.dout,vo);setStroke(r.q3d,vo);setStroke(r.cr,vo);setStroke(r.crp,vo);setStroke(r.vdd,1);setStroke(r.q4g,s.P);
+    const mid=s.R?vo*(1-g2):(g2>0.5?0:vo);setStroke(r.mid,mid);setStroke(r.q2s,0);
+    const h=10*clamp(vs,0,1);r.cfill.setAttribute('y',(305-h).toFixed(1));r.cfill.setAttribute('height',h.toFixed(1));r.cfill.style.opacity=(0.25+0.6*vs).toFixed(2);
+    r.leak.style.opacity=(s.W?0:clamp(vs*1.1,0,1)).toFixed(2);
+    const c1=s.W&&Math.abs(s.DIN-vs)>0.02,c23=s.R&&g2>0.5&&vo>0.02,c4=s.P&&vo<0.98;
+    setCls(r.Q1,mosState(s.W,c1));setCls(r.Q2,mosState(g2>0.5,c23));setCls(r.Q3,mosState(s.R,c23));setCls(r.Q4,mosState(s.P,c4||this.bad));
+    r.f1.style.display=c1?'':'none';if(c1)setCls(r.f1,s.DIN>vs?'flow':'flow rev');r.f2.style.display=c23?'':'none';r.f3.style.display=(c4||this.bad)?'':'none';
+    r.rb.set(s.R?(this.bad?'bad':'on'):'',s.R?'ON':'OFF');r.wb.set(s.W?'on':'',s.W?'ON':'OFF');r.pb.set(s.P?(this.bad?'bad':'on'):'',s.P?'ON':'OFF');
+    const b=TTL.bit(vs),ob=TTL.bit(vo);setTxt(r.bit,b);setCls(r.bitb,b==='?'?'bitb warn':'bitb');setTxt(r.snv,fT(vs));setTxt(r.dov,fT(vo));
+    setTxt(this.k.cs,fT(vs));setTxt(this.k.bit,TTL.name(vs));setTxt(this.k.vo,`${fT(vo)}（${ob==='?'?'未知':ob}）`);
+    setTxt(this.k.rd,s.R&&this.rt>0.35&&this.readOk?`輸出 ${ob} → 資料 = ${ob==='?'?'?':1-ob}`:'—（需預先充電後 Read）');
+    setTxt(this.k.st,this.bad?'衝突：預先充電與讀出同時導通，VDD 直接接地':s.W?(c1?'寫入中：Q1 導通，Cgs 充／放電':'寫入中：Cgs 已與資料輸入同電位'):s.P?'預先充電中：輸出線充到 VDD':s.R?(c23?'讀出中：Q2 導通，輸出線放電':'讀出中：Q2 截止，輸出線維持高電位'):(b==='?'?'Cgs 電荷流失到未知區，需要更新':'保存中：Q1 截止，Cgs 慢慢漏電'));
+    setTxt(r.obit,ob);setTxt(r.ov,fT(vo));r.oled.style.fill=ob==='1'?'var(--high)':ob==='0'?'var(--low)':'var(--warn)';
+    const valid=s.R&&this.rt>0.35&&this.readOk;if(valid&&ob!=='?')this.lastRead=1-ob;
+    setTxt(r.rbit,valid?(ob==='?'?'未知':`${1-ob}（Q2 ${ob==='0'?'導通':'截止'}）`):(this.lastRead!=null?`${this.lastRead}（上次讀出）`:'—（預先充電後 Read）'));
+    r.obox.style.stroke=valid?'var(--accent)':'var(--line)';
+    this.mt(vs);},
+  makeTask(){const X=rnd2();if(Math.random()<0.5)return{type:'write',X,par:9,text:`把資料 <b>${X}</b> 寫入 3T 記憶胞（C<sub>gs</sub>）`};
+    return{type:'read',orig:X,par:13,text:'讀出 3T 記憶胞<b>儲存的資料</b>並回報（不是資料輸出線的電壓）'};},
+  setupTask(t){this.setLeak(30);this.vs=t.type==='write'?1-t.X:t.orig;this.vo=rnd2()?0.05:0.6;Object.assign(this.sig,{DIN:rnd2(),W:0,R:0,P:0});this.readOk=false;this.rt=0;this.lastRead=null;},
+  rules(n,v,t){const e=[],s=this.sig;
+    if(v===1&&((n==='P'&&s.R)||(n==='R'&&s.P)))e.push('預先充電與讀出同時導通，VDD 經 Q4、Q3、Q2 直接接地');
+    if(t.type==='write'){
+      if(n==='W'&&v===1&&s.DIN!==t.X)e.push(`寫入前要先把資料輸入設為 ${t.X?'5 V':'0 V'}`);
+      if(n==='DIN'&&s.W&&v!==t.X)e.push('寫入控制線開啟時改變資料輸入，會寫入錯誤資料');
+      if(n==='W'&&v===0&&Math.abs(this.vs-t.X)>0.12)e.push(TTL.bit(this.vs)===String(t.X)?'Cgs 尚未充／放電完成就關閉寫入控制線':`Cgs 電壓 ${fT(this.vs)} 還不在 TTL 的 ${t.X} 準位就關閉寫入控制線`);
+    }else{
+      if(n==='W'&&v===1)e.push('讀出時不可開啟寫入控制線，會覆蓋儲存的資料');
+      if(n==='R'&&v===1&&!s.P&&this.vo<0.9)e.push('讀出前要先預先充電，輸出線上的舊電壓會被誤認為資料');
+    }
+    return e;},
+  isDone(t){const s=this.sig,idle=!s.W&&!s.R&&!s.P;if(t.type==='write')return idle&&Math.abs(this.vs-t.X)<0.15;return idle&&this.quiz.answer!=null;},
+  finalCheck(t){if(t.type==='read'&&TTL.bit(this.vs)!==String(t.orig))return['讀出過程中儲存資料被改變'];return[];}
+});
+
+/* =========================================================
+   工作項目 3：DRAM 3x3 陣列
+   ========================================================= */
+new Page({id:'p3',num:3,dram:true,wide:true,title:'DRAM 3×3 陣列＋儲存介面',
+  desc:'九個 1T1C 記憶胞排成 3 列 × 3 行。列位址經列解碼器選出一條字元線，整列三個記憶胞同時接上各自的位元線；每行有預充電路、感測放大器與寫入驅動器，行位址決定哪一行的寫入驅動器動作。因為開啟字元線會破壞整列的資料，同列其他記憶胞必須靠感測放大器回寫。',
+  vb:'0 0 740 630',hint:'點記憶胞可直接選取位址',
+  names:{ROW:'列位址',COL:'行位址',D:'資料輸入 D_in',PRE:'預充 PRE（全部行）',ACT:'列啟動 ACT（開啟選定 WL）',SAE:'感測放大致能 SAE',WE:'寫入致能 WE（選定行）'},
+  fmt(n,v){return n==='ROW'?'R'+v:n==='COL'?'C'+v:String(v);},
+  proc:`<h4>寫入到 (Rr, Cc)</h4><ol><li>設定列位址、行位址與 <code>D_in</code></li><li><code>PRE = 1</code> 把所有位元線預充到 VDD/2，再 <code>PRE = 0</code></li><li><code>ACT = 1</code>：選定列的字元線打開，三行同時電荷分享</li><li><code>SAE = 1</code>：三個感測放大器鎖存並回寫整列</li><li><code>WE = 1</code>：選定行的寫入驅動器蓋過感測放大器，寫入 D_in</li><li>等電容充／放電完成，<code>WE = 0</code></li><li><code>ACT = 0</code>（關字元線，整列資料保存）</li><li><code>SAE = 0</code></li></ol>
+  <p>字元線開啟期間不可改列位址；寫入驅動器開啟期間不可改行位址。漏電由「自動更新」在閒置時逐列 refresh。</p>`,
+  demos:[{l:'寫入到選定位置',fn:async function(){await this.d('PRE',1,600);await this.d('PRE',0,400);await this.d('ACT',1,900);await this.d('SAE',1,900);await this.d('WE',1,1300);await this.d('WE',0,400);await this.d('ACT',0,400);await this.d('SAE',0,300);}},
+         {l:'讀取選定位置',fn:async function(){await this.d('PRE',1,600);await this.d('PRE',0,400);await this.d('ACT',1,900);await this.d('SAE',1,1100);this.log(`Dout(R${this.sig.ROW},C${this.sig.COL}) = ${this.dout}`,'info');await this.d('ACT',0,400);await this.d('SAE',0,300);}},
+         {l:'更新選定列',fn:async function(){await this.d('PRE',1,600);await this.d('PRE',0,400);await this.d('ACT',1,900);await this.d('SAE',1,1100);await this.d('ACT',0,400);await this.d('SAE',0,300);}}],
+  init(){this.m=new DramModel(3,3);const init=[[1,0,1],[0,1,0],[1,1,0]];for(let r=0;r<3;r++)for(let c=0;c<3;c++)this.m.v[r][c]=init[r][c];
+    this.m.bl=[0.5,0.5,0.5];this.sig={ROW:0,COL:0,D:1,PRE:0,ACT:0,SAE:0,WE:0};this.sa=[null,null,null];this.dout='—';this.ar=true;this.arT=0;this.arRow=0;this.flash=[0,0,0];this.bad=[false,false,false];},
+  geo:{AX:200,AY:196,PX:170,PY:140},
+  buildSvg(svg){const g=S('g',{},svg),r=this.r={cells:grid(3,3,null),bl:[],wl:[],blk:[]};const{AX,AY,PX,PY}=this.geo;
+    r.rowBand=S('rect',{x:156,y:0,width:570,height:PY-2,rx:10,class:'band'},g);r.colBand=S('rect',{x:0,y:16,width:PX-6,height:600,rx:10,class:'band'},g);
+    for(let c=0;c<3;c++){const x=AX+PX*c;
+      r.bl[c]=S('path',{d:`M${x},24 V${AY+PY*2+136}`,class:'wire thick'},g);T(g,x+6,AY+PY*2+150,'BL'+c,'lbl');
+      const b={wd:block(g,x+12,24,148,40,'寫入驅動 C'+c,'WE・D_in'),pre:block(g,x+12,70,148,40,'預充 C'+c,'→ VDD/2'),sa:block(g,x+12,116,148,40,'感測放大 C'+c,'—')};r.blk[c]=b;
+      b.vt=T(g,x+6,AY-12,'','vt');
+      for(const y of[44,90,136]){S('path',{d:`M${x},${y} H${x+12}`,class:'wire'},g);S('circle',{cx:x,cy:y,r:3,class:'dot'},g);}}
+    const dec=S('g',{class:'blk'},g);S('rect',{x:14,y:AY+8,width:128,height:PY*3-26,rx:10},dec);T(dec,26,AY+34,'列解碼器','bt');r.decS=T(dec,26,AY+52,'','bs');T(dec,26,AY+72,'點擊＝ACT 開關','bs');r.dec=dec;
+    for(let i=0;i<3;i++){const y=AY+PY*i+20;r.wl[i]=S('path',{d:`M158,${y} H${AX+PX*2+152}`,class:'wire thick'},g);
+      S('path',{d:`M142,${y-9} L158,${y} L142,${y+9} Z`,class:'drv'},g);T(g,100,y+4,'WL'+i,'lbl');}
+    for(let i=0;i<3;i++)for(let c=0;c<3;c++){r.cells[i][c]=drawDramCell(g,AX+PX*c,AY+PY*i,1,svg.id);this.hit(r.cells[i][c].g,()=>{this.user('ROW',i);this.user('COL',c);},`選取位置 R${i} C${c}`);}
+    for(let c=0;c<3;c++){this.tog(r.blk[c].wd.w,'WE','寫入致能 WE');this.tog(r.blk[c].pre.w,'PRE','預充 PRE');this.tog(r.blk[c].sa.w,'SAE','感測放大致能 SAE');}
+    this.tog(dec,'ACT','列啟動 ACT');
+    this.pills(g,70,30,'ROW','列位址',[0,1,2].map(v=>({v,l:'R'+v})));this.pills(g,70,62,'COL','行位址',[0,1,2].map(v=>({v,l:'C'+v})));this.pills(g,70,94,'D','D_in',[{v:0,l:'0'},{v:1,l:'1'}]);},
+  buildStatus(box){this.k={addr:this.kv(box,'選定位置'),dout:this.kv(box,'Dout（選定行）')};
+    const d=H('div',{class:'kv wide'},box,'<span>陣列資料（依 VDD/2 判讀；黃色＝電荷不足需更新）</span><div class="mini"></div>');this.miniEl=d.querySelector('.mini');
+    this.leakSlider(box,this.m,30);
+    const c=H('label',{class:'chk kv wide'},box,'<input type="checkbox" id="ar-p3" checked> 自動更新（閒置時每 2 秒 refresh 一列）');
+    this.arChk=c.querySelector('input');this.arChk.onchange=()=>{this.ar=this.arChk.checked;};},
+  onSync(){if(this.arChk)this.arChk.disabled=this.quiz.active;},
+  onSig(n,v){const s=this.sig,m=this.m;
+    if(n==='SAE'&&v===1){for(let c=0;c<3;c++){const d=m.bl[c]-0.5;this.sa[c]=Math.abs(d)<0.006?rnd2():(d>0?1:0);}this.log('感測放大器鎖存：['+this.sa.join(', ')+']','info');}
+    if(n==='SAE'&&v===0)this.sa=[null,null,null];
+    if(s.SAE&&s.WE)this.sa[s.COL]=s.D;
+    if(s.SAE&&this.sa[s.COL]!=null)this.dout=this.sa[s.COL];},
+  drives(){const s=this.sig,out=[],bad=[];for(let c=0;c<3;c++){const src=[];if(s.PRE)src.push(0.5);
+      if(s.WE&&c===s.COL)src.push(s.D);else if(s.SAE&&this.sa[c]!=null)src.push(this.sa[c]);
+      out.push(src.length?src.reduce((a,b)=>a+b,0)/src.length:null);bad.push(src.length>1);}return{out,bad};},
+  step(dt){const m=this.m,s=this.sig;for(let i=0;i<3;i++)m.wl[i]=(s.ACT&&s.ROW===i)?1:0;const dr=this.drives();m.drive=dr.out;this.bad=dr.bad;m.step(dt);
+    if(this.ar&&!s.ACT){this.arT+=dt;if(this.arT>2){this.arT=0;const i=this.arRow++%3;for(let c=0;c<3;c++)m.v[i][c]=m.v[i][c]>0.5?1:0;this.flash[i]=0.45;}}
+    for(let i=0;i<3;i++)if(this.flash[i]>0)this.flash[i]-=dt;},
+  render(){const m=this.m,r=this.r,s=this.sig,{AX,AY,PX,PY}=this.geo;
+    r.rowBand.setAttribute('y',AY+PY*s.ROW+4);r.colBand.setAttribute('x',AX+PX*s.COL-8);
+    for(let c=0;c<3;c++){setStroke(r.bl[c],m.bl[c]);setTxt(r.blk[c].vt,fV(m.bl[c]));const b=r.blk[c],bad=this.bad[c]?'bad':'';
+      const sel=c===s.COL;b.wd.set(s.WE&&sel?(bad||'on'):(sel?'':'dim'),s.WE&&sel?'ON':'OFF',sel?`WE・D_in = ${s.D}`:'未選擇');
+      b.pre.set(s.PRE?(bad||'on'):'',s.PRE?'ON':'OFF');b.sa.set(s.SAE?(bad||'on'):'',s.SAE?'ON':'OFF',s.SAE&&this.sa[c]!=null?'鎖存 '+this.sa[c]:'—');}
+    for(let i=0;i<3;i++){setStroke(r.wl[i],m.wl[i]);for(let c=0;c<3;c++){const cl=r.cells[i][c];updDramCell(cl,m.v[i][c],m.bl[c],m.wl[i]);
+      setCls(cl.box,'cellbox'+(i===s.ROW&&c===s.COL?' sel':'')+(this.flash[i]>0?' flash':''));}}
+    setTxt(r.decS,`位址 = R${s.ROW}${s.ACT?'，WL'+s.ROW+' 開啟':''}`);r.dec.classList.toggle('on',!!s.ACT);
+    setTxt(this.k.addr,`(R${s.ROW}, C${s.COL})`);setTxt(this.k.dout,String(this.dout));
+    let h='<div class="h"></div>'+[0,1,2].map(c=>`<div class="h">C${c}</div>`).join('');
+    for(let i=0;i<3;i++){h+=`<div class="h">R${i}</div>`;for(let c=0;c<3;c++){const v=m.v[i][c];h+=`<div class="${(i===s.ROW&&c===s.COL)?'t ':''}${v>0.3&&v<0.7?'w':''}">${v>0.5?1:0}</div>`;}}
+    if(this.miniEl._h!==h){this.miniEl.innerHTML=h;this.miniEl._h=h;}},
+  makeTask(){const r=Math.floor(Math.random()*3),c=Math.floor(Math.random()*3),X=rnd2();return{type:'write',r,c,X,par:28,text:`把資料 <b>${X}</b> 寫入位置 <b>(R${r}, C${c})</b>，同列與其他位置的資料不可被破壞`};},
+  setupTask(t){const m=this.m;this.setLeak(30);this.ar=true;if(this.arChk)this.arChk.checked=true;
+    for(let i=0;i<3;i++)for(let c=0;c<3;c++)m.v[i][c]=rnd2();m.v[t.r][t.c]=1-t.X;
+    for(let c=0;c<3;c++)m.bl[c]=rnd2();Object.assign(this.sig,{PRE:0,ACT:0,SAE:0,WE:0,D:rnd2(),ROW:(t.r+1+Math.floor(Math.random()*2))%3,COL:Math.floor(Math.random()*3)});
+    this.sa=[null,null,null];this.dout='—';t.snap=grid(3,3,(i,c)=>m.v[i][c]>0.5?1:0);},
+  rules(n,v,t){const e=[],s=this.sig,m=this.m;
+    if(n==='ROW'&&s.ACT)e.push('字元線開啟時不可變更列位址（會同時打開兩列）');
+    if(n==='COL'&&s.WE)e.push('寫入驅動器開啟時不可變更行位址');
+    if(n==='D'&&s.WE)e.push('寫入中改變 D_in，會寫入錯誤資料');
+    if(v!==1)/* falling edges */{
+      if(n==='ACT'&&v===0){if(!s.SAE)e.push('沒有經感測放大器回寫就關閉字元線，整列資料被破壞');
+        else if(s.WE&&s.ROW===t.r&&s.COL===t.c&&Math.abs(m.v[t.r][t.c]-t.X)>0.12)e.push('寫入尚未完成就關閉字元線');
+        else{for(let c=0;c<3;c++)if(this.sa[c]!=null&&Math.abs(m.v[s.ROW][c]-this.sa[c])>0.15){e.push('回寫尚未完成就關閉字元線');break;}}}
+      return e;}
+    if(n==='PRE'&&s.ACT)e.push('字元線開啟時預充，會把整列電容拉到 VDD/2');
+    if(n==='ACT'&&s.PRE)e.push('預充還沒關閉就開啟字元線');
+    if((n==='PRE'&&(s.SAE||s.WE))||((n==='SAE'||n==='WE')&&s.PRE))e.push('預充電路與感測放大器／寫入驅動器同時驅動位元線（衝突）');
+    if(n==='ACT'&&!s.PRE&&m.bl.some(b=>Math.abs(b-0.5)>0.03))e.push('開啟字元線前必須先把所有位元線預充到 VDD/2 並放開');
+    if(n==='ACT'&&s.ROW!==t.r)e.push(`列位址錯誤（應為 R${t.r}）`);
+    if(n==='SAE'&&!s.PRE){if(!s.ACT)e.push('要先開啟字元線讓電荷分享，再啟動感測放大器');
+      else if([0,1,2].some(c=>Math.abs(m.bl[c]-m.v[s.ROW][c])>0.03))e.push('電荷分享尚未完成就啟動感測放大器');}
+    if(n==='WE'){if(!s.SAE)e.push('要先啟動感測放大器鎖住整列資料，再開寫入驅動器');
+      if(s.COL!==t.c||s.D!==t.X||(s.ACT&&s.ROW!==t.r))e.push('位址或 D_in 設定錯誤就開始寫入');}
+    return e;},
+  isDone(t){const s=this.sig,v=this.m.v[t.r][t.c];return!s.ACT&&!s.SAE&&!s.WE&&Math.abs(v-t.X)<0.15;},
+  finalCheck(t){const e=[];for(let i=0;i<3;i++)for(let c=0;c<3;c++){if(i===t.r&&c===t.c)continue;if((this.m.v[i][c]>0.5?1:0)!==t.snap[i][c])e.push(`位置 (R${i}, C${c}) 的資料被破壞`);}return e;}
+});
+
+/* =========================================================
+   工作項目 4：SRAM 基本記憶胞
+   ========================================================= */
+new Page({id:'p4',num:4,title:'SRAM 基本記憶胞（6T）',
+  desc:'兩個 CMOS 反相器（P1/N1、P2/N2）頭尾相接形成正回授閂鎖，Q 與 Q̄ 永遠互補；兩顆 NMOS 存取電晶體 A1、A2 由字元線控制，把 Q、Q̄ 接到位元線 BL、BLB。只要有電源，資料就會一直保持，不需要更新；但關掉電源資料就消失。',
+  vb:'0 -46 560 436',
+  names:{WL:'字元線 WL',BL:'位元線 BL',BLB:'位元線 BLB',PWR:'電源 VDD'},
+  fmt(n,v){if(n==='BL'||n==='BLB')return v==='F'?'預充 VDD 後浮接':v?'驅動 VDD（1）':'驅動 0 V（0）';if(n==='PWR')return v?'開':'關';return String(v);},
+  proc:`<h4>寫入 X</h4><ol><li><code>BL = X</code>、<code>BLB = X̄</code>（互補驅動）</li><li><code>WL = 1</code>：拉低的一側經存取電晶體把節點拉下，觸發正回授，記憶胞翻轉</li><li>等 Q、Q̄ 穩定（電晶體不再有電流）</li><li><code>WL = 0</code>，資料由交叉反相器自行保持</li></ol>
+  <h4>讀取（觀念）</h4><ol><li>BL、BLB 都預充到 VDD 後浮接</li><li><code>WL = 1</code>：存 0 的那一側經 A 與 N 電晶體放電，對應的位元線慢慢下降</li><li>比較 BL 與 BLB 的差即可得知資料；記憶胞本身不被破壞（非破壞性讀取）</li></ol>
+  <p>N 電晶體比存取電晶體強，讀取時節點只會被拉高一點點而不會翻轉；存取電晶體比 P 電晶體強，所以寫入能成功。</p>`,
+  demos:[{l:'寫入 1',fn:async function(){await this.d('BL',1,300);await this.d('BLB',0,600);await this.d('WL',1,1000);await this.d('WL',0,300);}},
+         {l:'寫入 0',fn:async function(){await this.d('BL',0,300);await this.d('BLB',1,600);await this.d('WL',1,1000);await this.d('WL',0,300);}},
+         {l:'讀取',fn:async function(){await this.d('BL','F',300);await this.d('BLB','F',700);await this.d('WL',1,1500);const m=this.m;this.log(`BL = ${fV(m.bl[0])}，BLB = ${fV(m.blb[0])} → 資料 = ${m.bl[0]>m.blb[0]?1:0}（記憶胞未被破壞）`,'info');await this.d('WL',0,300);}},
+         {l:'斷電再上電',fn:async function(){await this.d('PWR',0,1400);await this.d('PWR',1,1200);this.log('重新上電後資料隨機決定：Q = '+this.m.bit(0,0),'info');}}],
+  init(){this.m=new SramModel(1,1);this.m.set(0,0,1);this.m.bl[0]=1;this.m.blb[0]=1;this.sig={WL:0,BL:'F',BLB:'F',PWR:1};this.preT=[0,0];},
+  buildSvg(svg){const g=S('g',{},svg),r=this.r={};const ox=50,oy=40,sc=1.75,X2=ox+260*sc;
+    r.bl=S('path',{d:`M${ox},30 V340`,class:'wire thick'},g);r.blb=S('path',{d:`M${X2},30 V340`,class:'wire thick'},g);
+    const o=[{v:0,l:'0 V'},{v:1,l:'VDD'},{v:'F',l:'浮接'}];this.pills(g,46,-40,'BL','BL',o,44);this.pills(g,368,-40,'BLB','BLB',o,44);
+    r.wld=block(g,8,346,120,40,'WL 字元線','');this.tog(r.wld.w,'WL','字元線 WL');r.pwb=block(g,432,346,120,40,'VDD 電源','');this.tog(r.pwb.w,'PWR','電源 VDD');
+    T(g,ox+8,22,'BL','lbl');r.blv=T(g,ox+34,22,'','mono muted');T(g,X2-8,22,'BLB','lbl',{'text-anchor':'end'});r.blbv=T(g,X2-44,22,'','mono muted',{'text-anchor':'end'});
+    r.wl=S('path',{d:`M20,${oy+20*sc} H${X2+20}`,class:'wire thick'},g);S('path',{d:`M4,${oy+20*sc-10} L20,${oy+20*sc} L4,${oy+20*sc+10} Z`,class:'drv'},g);T(g,2,oy+20*sc-16,'WL','lbl');
+    r.cell=drawSramCell(g,ox,oy,sc);
+    r.pw=T(g,280,370,'','mono muted',{'text-anchor':'middle'});},
+  buildStatus(box){this.k={q:this.kv(box,'Q 節點'),qb:this.kv(box,'Q̄ 節點'),bit:this.kv(box,'儲存資料（Q）'),bl:this.kv(box,'BL／BLB'),st:this.kv(box,'目前狀態',true)};},
+  onSig(n,v){if(n==='BL'&&v==='F')this.preT[0]=0.25;if(n==='BLB'&&v==='F')this.preT[1]=0.25;},
+  step(dt){const m=this.m,s=this.sig;m.wl[0]=s.WL;m.power=s.PWR;for(let i=0;i<2;i++)if(this.preT[i]>0)this.preT[i]-=dt;
+    m.dBL[0]=s.BL==='F'?(this.preT[0]>0?1:null):s.BL;m.dBLB[0]=s.BLB==='F'?(this.preT[1]>0?1:null):s.BLB;m.step(dt);},
+  render(){const m=this.m,r=this.r,s=this.sig;updSramCell(r.cell,m,0,0);setStroke(r.bl,m.bl[0]);setStroke(r.blb,m.blb[0]);setStroke(r.wl,s.WL);
+    setTxt(r.blv,fV(m.bl[0]));setTxt(r.blbv,fV(m.blb[0]));setTxt(r.pw,'VDD = '+fV(m.vdd));r.wld.set(s.WL?'on':'',s.WL?'ON':'OFF');r.pwb.set(s.PWR?'on':'bad',s.PWR?'ON':'OFF');
+    const Q=m.q[0][0],QB=m.qb[0][0];setTxt(this.k.q,fV(Q));setTxt(this.k.qb,fV(QB));setTxt(this.k.bit,Math.abs(Q-QB)<0.4?'不確定（翻轉中）':String(Q>QB?1:0));
+    setTxt(this.k.bl,`${fV(m.bl[0])} / ${fV(m.blb[0])}`);
+    setTxt(this.k.st,m.vdd<0.5?'斷電：所有節點放電，資料消失':!s.WL?'保持：交叉耦合反相器互相維持，不需更新':(Math.abs(Q-QB)<0.4?'翻轉中：正回授作用':'字元線開啟：記憶胞接上位元線'));},
+  makeTask(){const X=rnd2();return{type:'write',X,par:9,text:`把資料 <b>${X}</b> 寫入這個 SRAM 記憶胞（Q = ${X}）`};},
+  setupTask(t){this.m.set(0,0,1-t.X);this.m.power=1;this.m.vdd=1;Object.assign(this.sig,{WL:0,BL:'F',BLB:'F',PWR:1});this.m.bl[0]=1;this.m.blb[0]=1;},
+  rules(n,v,t){const e=[],s=this.sig,X=t.X;
+    if(n==='PWR'&&v===0)e.push('關閉電源會讓 SRAM 資料消失');
+    if(n==='WL'&&v===1&&!(s.BL===X&&s.BLB===1-X))e.push(`開啟字元線前要先把 BL 設為 ${X?'VDD':'0'}、BLB 設為 ${X?'0':'VDD'}`);
+    if((n==='BL'&&s.WL&&v!==X)||(n==='BLB'&&s.WL&&v!==1-X))e.push('字元線開啟時把位元線改成錯誤值，記憶胞可能被寫錯');
+    if(n==='WL'&&v===0&&!this.m.settled(0,0,X))e.push('記憶胞尚未翻轉穩定就關閉字元線');
+    return e;},
+  isDone(t){return!this.sig.WL&&this.sig.PWR&&this.m.settled(0,0,t.X);}
+});
+
+/* =========================================================
+   工作項目 5：SRAM 單位元儲存介面
+   ========================================================= */
+new Page({id:'p5',num:5,title:'SRAM 單位元的儲存介面',
+  desc:'SRAM 使用一對互補位元線 BL／BLB。預充電路把兩條線都拉到 VDD；寫入驅動器在 WE 時把 BL = D_in、BLB = D̄_in；差動感測放大器比較 BL 與 BLB 的微小差異輸出 Dout。讀取不會破壞資料，所以不需要回寫，也不需要更新。',
+  vb:'0 0 560 520',
+  names:{D:'資料輸入 D_in',WE:'寫入致能 WE',PRE:'預充 PRE',WL:'字元線 WL',SAE:'感測放大致能 SAE'},
+  fmt(n,v){return String(v);},
+  proc:`<h4>寫入</h4><ol><li>設定 <code>D_in</code></li><li><code>WE = 1</code>（BL = D_in、BLB = D̄_in）</li><li><code>WL = 1</code>，等記憶胞翻轉穩定</li><li><code>WL = 0</code></li><li><code>WE = 0</code></li></ol>
+  <h4>讀取</h4><ol><li><code>PRE = 1</code> 把 BL、BLB 拉到 VDD，再 <code>PRE = 0</code></li><li><code>WL = 1</code>，等 BL 與 BLB 之間出現電壓差</li><li><code>SAE = 1</code>：比較 BL 與 BLB，輸出 Dout</li><li><code>WL = 0</code></li><li><code>SAE = 0</code></li></ol>
+  <p>預充不可與寫入驅動器同時開；字元線開啟時也不可預充（強大的預充電流可能把記憶胞翻轉）。</p>`,
+  demos:[{l:'寫入 D_in',fn:async function(){await this.d('WE',1);await this.d('WL',1,1100);await this.d('WL',0,400);await this.d('WE',0,300);}},
+         {l:'讀取',fn:async function(){await this.d('PRE',1,600);await this.d('PRE',0,400);await this.d('WL',1,900);await this.d('SAE',1,800);this.log('Dout = '+this.dout,'info');await this.d('WL',0,400);await this.d('SAE',0,300);}},
+         {l:'切換 D_in',fn:async function(){await this.d('D',this.sig.D?0:1,200);}}],
+  init(){this.m=new SramModel(1,1);this.m.set(0,0,0);this.sig={D:1,WE:0,PRE:0,WL:0,SAE:0};this.dout='—';},
+  buildSvg(svg){const g=S('g',{},svg),r=this.r={};const ox=90,oy=226,sc=1.45,X2=ox+260*sc;
+    r.bl=S('path',{d:`M${ox},24 V490`,class:'wire thick'},g);r.blb=S('path',{d:`M${X2},24 V490`,class:'wire thick'},g);
+    T(g,ox-8,18,'BL','lbl',{'text-anchor':'end'});T(g,X2+8,18,'BLB','lbl');r.blv=T(g,ox-8,504,'','mono muted',{'text-anchor':'middle'});r.blbv=T(g,X2+8,504,'','mono muted',{'text-anchor':'middle'});
+    r.st=[];const blocks=[['pre','預充電路','PRE → BL、BLB = VDD',30],['wd','寫入驅動器','WE・BL = D_in、BLB = D̄_in',92],['sa','差動感測放大器','SAE・比較 BL 與 BLB',154]];
+    for(const[k,t,s,y]of blocks){r[k]=block(g,ox+22,y,X2-ox-44,50,t,s);const a=S('path',{d:`M${ox},${y+25} H${ox+22}`,class:'wire'},g),b=S('path',{d:`M${X2-22},${y+25} H${X2}`,class:'wire'},g);r.st.push([k,a,b]);
+      S('circle',{cx:ox,cy:y+25,r:3.4,class:'dot'},g);S('circle',{cx:X2,cy:y+25,r:3.4,class:'dot'},g);}
+    r.wl=S('path',{d:`M78,${oy+20*sc} H${X2+16}`,class:'wire thick'},g);r.wld=block(g,2,oy+20*sc-20,76,40,'WL','字元線');
+    this.tog(r.wld.w,'WL','字元線 WL');this.tog(r.pre.w,'PRE','預充 PRE');this.tog(r.wd.w,'WE','寫入致能 WE');this.tog(r.sa.w,'SAE','感測放大致能 SAE');
+    this.pills(g,236,2,'D','D_in',[{v:0,l:'0'},{v:1,l:'1'}],30);
+    r.cell=drawSramCell(g,ox,oy,sc);},
+  buildStatus(box){this.k={q:this.kv(box,'Q／Q̄'),bit:this.kv(box,'儲存資料'),bl:this.kv(box,'BL／BLB'),diff:this.kv(box,'差動電壓 BL − BLB'),dout:this.kv(box,'Dout')};},
+  onSig(n,v){if(n==='SAE'&&v===1){const d=this.m.bl[0]-this.m.blb[0];this.dout=Math.abs(d)<0.02?rnd2():(d>0?1:0);if(this.quiz.active)this.quiz.latched=true;this.log('感測放大器輸出：Dout = '+this.dout,'info');}},
+  step(dt){const m=this.m,s=this.sig;m.wl[0]=s.WL;let b=null,bb=null;this.bad=false;
+    if(s.PRE&&s.WE){b=(1+s.D)/2;bb=(1+1-s.D)/2;this.bad=true;}else if(s.PRE){b=1;bb=1;}else if(s.WE){b=s.D;bb=1-s.D;}
+    m.dBL[0]=b;m.dBLB[0]=bb;m.step(dt);},
+  render(){const m=this.m,r=this.r,s=this.sig;updSramCell(r.cell,m,0,0);setStroke(r.bl,m.bl[0]);setStroke(r.blb,m.blb[0]);setStroke(r.wl,s.WL);
+    setTxt(r.blv,fV(m.bl[0]));setTxt(r.blbv,fV(m.blb[0]));
+    for(const[k,a,b]of r.st){const on=k==='pre'?s.PRE:k==='wd'?s.WE:s.SAE;setStroke(a,on||k==='sa'?m.bl[0]:0.5);setStroke(b,on||k==='sa'?m.blb[0]:0.5);}
+    const bad=this.bad?'bad':'';r.pre.set(s.PRE?(bad||'on'):'',s.PRE?'ON':'OFF');r.wd.set(s.WE?(bad||'on'):'',s.WE?'ON':'OFF',`WE・D_in = ${s.D}（BL = ${s.D}、BLB = ${1-s.D}）`);
+    r.sa.set(s.SAE?'on':'',s.SAE?'ON':'OFF',`SAE・Dout = ${this.dout}`);r.wld.set(s.WL?'on':'',s.WL?'ON':'OFF');
+    const Q=m.q[0][0],QB=m.qb[0][0];setTxt(this.k.q,`${fV(Q)} / ${fV(QB)}`);setTxt(this.k.bit,Math.abs(Q-QB)<0.4?'翻轉中':String(Q>QB?1:0));
+    setTxt(this.k.bl,`${fV(m.bl[0])} / ${fV(m.blb[0])}`);setTxt(this.k.diff,((m.bl[0]-m.blb[0])*VDD).toFixed(2)+' V');setTxt(this.k.dout,String(this.dout));},
+  makeTask(){const X=rnd2();if(Math.random()<0.5)return{type:'write',X,par:11,text:`用寫入介面把資料 <b>${X}</b> 存進 SRAM 記憶胞`};
+    return{type:'read',orig:X,par:13,text:'讀出 SRAM 記憶胞目前儲存的資料並回報'};},
+  setupTask(t){const m=this.m;m.set(0,0,t.type==='write'?1-t.X:t.orig);const b=rnd2();m.bl[0]=b;m.blb[0]=1-b;Object.assign(this.sig,{WE:0,PRE:0,WL:0,SAE:0,D:rnd2()});this.dout='—';},
+  rules(n,v,t){const e=[],s=this.sig,m=this.m;
+    if(v===1&&((n==='PRE'&&s.WE)||(n==='WE'&&s.PRE)))e.push('預充與寫入驅動器同時驅動位元線（衝突）');
+    if(v===1&&n==='PRE'&&s.WL)e.push('字元線開啟時預充，可能把記憶胞翻轉');
+    if(v===1&&n==='WL'&&s.PRE)e.push('預充尚未關閉就開啟字元線');
+    if(t.type==='write'){
+      if(n==='WL'&&v===1&&!(s.WE&&s.D===t.X))e.push(`開啟字元線前要先設定 D_in = ${t.X} 並啟動寫入驅動器（WE = 1）`);
+      if(n==='D'&&s.WE&&s.WL)e.push('寫入中改變 D_in，會寫入錯誤資料');
+      if(n==='WE'&&v===1&&s.WL&&s.D!==t.X)e.push('D_in 設定錯誤就開始寫入');
+      if(n==='WL'&&v===0&&!m.settled(0,0,t.X))e.push('記憶胞尚未翻轉穩定就關閉字元線');
+    }else{
+      if(n==='WE'&&v===1)e.push('讀取時不可啟動寫入驅動器，會覆蓋原資料');
+      if(n==='WL'&&v===1&&!s.PRE&&!(m.bl[0]>0.9&&m.blb[0]>0.9))e.push('開啟字元線前要先把 BL、BLB 預充到 VDD 並放開');
+      if(n==='SAE'&&v===1){if(!s.WL&&Math.abs(m.bl[0]-m.blb[0])<0.1)e.push('要先開啟字元線讓位元線產生電壓差，再啟動感測放大器');else if(Math.abs(m.bl[0]-m.blb[0])<0.1)e.push('BL 與 BLB 的電壓差尚未建立就啟動感測放大器');}
+    }
+    return e;},
+  isDone(t){const s=this.sig,idle=!s.WL&&!s.WE&&!s.SAE;if(t.type==='write')return idle&&this.m.settled(0,0,t.X);return idle&&this.quiz.answer!=null;},
+  finalCheck(t){if(t.type==='read'&&this.m.bit(0,0)!==t.orig)return['讀取過程中記憶胞資料被翻轉'];return[];}
+});
+
+/* =========================================================
+   工作項目 6：SRAM 3x3 陣列
+   ========================================================= */
+new Page({id:'p6',num:6,wide:true,title:'SRAM 3×3 陣列＋儲存介面',
+  desc:'九個 6T 記憶胞排成 3 × 3。列解碼器開啟一條字元線時，同列三個記憶胞都會接上自己的位元線對；被選中的行由寫入驅動器寫入，其他兩行是「半選」記憶胞，只能看到預充好的 VDD。如果位元線沒有先預充（還留著上次寫入的 0），半選記憶胞就會被誤寫。',
+  vb:'0 0 1040 775',hint:'點記憶胞可直接選取位址',
+  names:{ROW:'列位址',COL:'行位址',D:'資料輸入 D_in',PRE:'預充 PRE（全部行）',ACT:'列啟動 ACT（開啟選定 WL）',SAE:'感測放大致能 SAE',WE:'寫入致能 WE（選定行）'},
+  fmt(n,v){return n==='ROW'?'R'+v:n==='COL'?'C'+v:String(v);},
+  proc:`<h4>寫入到 (Rr, Cc)</h4><ol><li>設定列位址、行位址與 <code>D_in</code></li><li><code>PRE = 1</code> 把所有 BL／BLB 預充到 VDD，再 <code>PRE = 0</code></li><li><code>WE = 1</code>：只有選定行的位元線被驅動成 D_in／D̄_in</li><li><code>ACT = 1</code>：選定列字元線開啟，目標記憶胞翻轉，半選記憶胞只看到 VDD 不受影響</li><li>等翻轉穩定，<code>ACT = 0</code></li><li><code>WE = 0</code></li></ol>
+  <h4>讀取</h4><ol><li>預充 <code>PRE</code> 1→0</li><li><code>ACT = 1</code>，等位元線出現電壓差</li><li><code>SAE = 1</code> 讀出選定行 → Dout</li><li><code>ACT = 0</code>、<code>SAE = 0</code></li></ol>`,
+  demos:[{l:'寫入到選定位置',fn:async function(){await this.d('PRE',1,600);await this.d('PRE',0,400);await this.d('WE',1,500);await this.d('ACT',1,1100);await this.d('ACT',0,400);await this.d('WE',0,300);}},
+         {l:'讀取選定位置',fn:async function(){await this.d('PRE',1,600);await this.d('PRE',0,400);await this.d('ACT',1,900);await this.d('SAE',1,800);this.log(`Dout(R${this.sig.ROW},C${this.sig.COL}) = ${this.dout}`,'info');await this.d('ACT',0,400);await this.d('SAE',0,300);}},
+         {l:'錯誤示範：未預充',fn:async function(){this.log('先在選定行寫入 0，位元線留下 BL=0；接著換一列、不預充就開字元線…','info');
+            await this.d('PRE',1,500);await this.d('PRE',0,300);await this.d('D',0,200);await this.d('WE',1,400);await this.d('ACT',1,900);await this.d('ACT',0,300);await this.d('WE',0,400);
+            await this.d('ROW',(this.sig.ROW+1)%3,500);await this.d('ACT',1,1300);await this.d('ACT',0,400);this.log('沒有預充的位元線還留著上次的電壓，新開啟那一列的記憶胞被誤寫（看陣列資料的變化）','info');}}],
+  init(){this.m=new SramModel(3,3);const init=[[1,0,0],[0,1,1],[1,0,1]];for(let r=0;r<3;r++)for(let c=0;c<3;c++)this.m.set(r,c,init[r][c]);
+    this.sig={ROW:0,COL:0,D:1,PRE:0,ACT:0,SAE:0,WE:0};this.dout='—';this.bad=[false,false,false];},
+  geo:{AX:200,AY:196,PX:280,PY:185},
+  buildSvg(svg){const g=S('g',{},svg),r=this.r={cells:grid(3,3,null),bl:[],blb:[],wl:[],blk:[]};const{AX,AY,PX,PY}=this.geo;
+    r.rowBand=S('rect',{x:156,y:0,width:875,height:PY-6,rx:12,class:'band'},g);r.colBand=S('rect',{x:0,y:16,width:276,height:736,rx:12,class:'band'},g);
+    for(let c=0;c<3;c++){const x=AX+PX*c,x2=x+260;
+      r.bl[c]=S('path',{d:`M${x},20 V${AY+PY*2+180}`,class:'wire thick'},g);r.blb[c]=S('path',{d:`M${x2},20 V${AY+PY*2+180}`,class:'wire thick'},g);
+      T(g,x+6,AY+PY*2+196,'BL'+c,'lbl');T(g,x2-6,AY+PY*2+196,'BLB'+c,'lbl',{'text-anchor':'end'});
+      const b={wd:block(g,x+18,24,224,44,'寫入驅動 C'+c,''),pre:block(g,x+18,76,224,44,'預充 C'+c,'→ VDD'),sa:block(g,x+18,128,224,44,'差動感測放大 C'+c,'—')};r.blk[c]=b;
+      b.vt=T(g,x+130,AY-8,'','vt',{'text-anchor':'middle'});
+      for(const y of[46,98,150]){S('path',{d:`M${x},${y} H${x+18} M${x2-18},${y} H${x2}`,class:'wire'},g);S('circle',{cx:x,cy:y,r:3,class:'dot'},g);S('circle',{cx:x2,cy:y,r:3,class:'dot'},g);}}
+    const dec=S('g',{class:'blk'},g);S('rect',{x:14,y:AY+8,width:128,height:PY*3-40,rx:10},dec);T(dec,26,AY+34,'列解碼器','bt');r.decS=T(dec,26,AY+52,'','bs');T(dec,26,AY+72,'點擊＝ACT 開關','bs');r.dec=dec;
+    for(let i=0;i<3;i++){const y=AY+PY*i+20;r.wl[i]=S('path',{d:`M158,${y} H${AX+PX*2+268}`,class:'wire thick'},g);
+      S('path',{d:`M142,${y-9} L158,${y} L142,${y+9} Z`,class:'drv'},g);T(g,100,y+4,'WL'+i,'lbl');}
+    for(let i=0;i<3;i++)for(let c=0;c<3;c++){r.cells[i][c]=drawSramCell(g,AX+PX*c,AY+PY*i,1);this.hit(r.cells[i][c].g,()=>{this.user('ROW',i);this.user('COL',c);},`選取位置 R${i} C${c}`);}
+    for(let c=0;c<3;c++){this.tog(r.blk[c].wd.w,'WE','寫入致能 WE');this.tog(r.blk[c].pre.w,'PRE','預充 PRE');this.tog(r.blk[c].sa.w,'SAE','感測放大致能 SAE');}
+    this.tog(dec,'ACT','列啟動 ACT');
+    this.pills(g,70,30,'ROW','列位址',[0,1,2].map(v=>({v,l:'R'+v})));this.pills(g,70,62,'COL','行位址',[0,1,2].map(v=>({v,l:'C'+v})));this.pills(g,70,94,'D','D_in',[{v:0,l:'0'},{v:1,l:'1'}]);},
+  buildStatus(box){this.k={addr:this.kv(box,'選定位置'),dout:this.kv(box,'Dout（選定行）')};
+    const d=H('div',{class:'kv wide'},box,'<span>陣列資料（Q）</span><div class="mini"></div>');this.miniEl=d.querySelector('.mini');
+    H('div',{class:'note kv wide'},box,'SRAM 為靜態記憶體：只要電源存在，資料靠交叉耦合反相器保持，不會漏電遺失，不需要 refresh。');},
+  onSig(n,v){if(n==='SAE'&&v===1){const c=this.sig.COL,d=this.m.bl[c]-this.m.blb[c];this.dout=Math.abs(d)<0.02?rnd2():(d>0?1:0);this.log('感測放大器輸出：Dout = '+this.dout,'info');}},
+  step(dt){const m=this.m,s=this.sig;for(let i=0;i<3;i++)m.wl[i]=(s.ACT&&s.ROW===i)?1:0;this.bad=[false,false,false];
+    for(let c=0;c<3;c++){let b=null,bb=null;const w=s.WE&&c===s.COL;
+      if(s.PRE&&w){b=(1+s.D)/2;bb=(2-s.D)/2;this.bad[c]=true;}else if(s.PRE){b=1;bb=1;}else if(w){b=s.D;bb=1-s.D;}
+      m.dBL[c]=b;m.dBLB[c]=bb;}
+    m.step(dt);},
+  render(){const m=this.m,r=this.r,s=this.sig,{AX,AY,PX,PY}=this.geo;
+    r.rowBand.setAttribute('y',AY+PY*s.ROW+2);r.colBand.setAttribute('x',AX+PX*s.COL-8);
+    for(let c=0;c<3;c++){setStroke(r.bl[c],m.bl[c]);setStroke(r.blb[c],m.blb[c]);const b=r.blk[c],sel=c===s.COL,bad=this.bad[c]?'bad':'';
+      setTxt(b.vt,`BL ${fV(m.bl[c])}  BLB ${fV(m.blb[c])}`);
+      b.wd.set(s.WE&&sel?(bad||'on'):(sel?'':'dim'),s.WE&&sel?'ON':'OFF',sel?`D_in = ${s.D}`:'未選擇');
+      b.pre.set(s.PRE?(bad||'on'):'',s.PRE?'ON':'OFF');b.sa.set(s.SAE&&sel?'on':(sel?'':'dim'),s.SAE&&sel?'ON':'OFF',sel?`Dout = ${this.dout}`:'未選擇');}
+    for(let i=0;i<3;i++){setStroke(r.wl[i],m.wl[i]);for(let c=0;c<3;c++){const cl=r.cells[i][c];updSramCell(cl,m,i,c);setCls(cl.box,'cellbox'+(i===s.ROW&&c===s.COL?' sel':''));}}
+    setTxt(r.decS,`位址 = R${s.ROW}${s.ACT?'，WL'+s.ROW+' 開啟':''}`);r.dec.classList.toggle('on',!!s.ACT);
+    setTxt(this.k.addr,`(R${s.ROW}, C${s.COL})`);setTxt(this.k.dout,String(this.dout));
+    let h='<div class="h"></div>'+[0,1,2].map(c=>`<div class="h">C${c}</div>`).join('');
+    for(let i=0;i<3;i++){h+=`<div class="h">R${i}</div>`;for(let c=0;c<3;c++){const amb=Math.abs(m.q[i][c]-m.qb[i][c])<0.4;h+=`<div class="${(i===s.ROW&&c===s.COL)?'t ':''}${amb?'w':''}">${amb?'?':m.bit(i,c)}</div>`;}}
+    if(this.miniEl._h!==h){this.miniEl.innerHTML=h;this.miniEl._h=h;}},
+  makeTask(){const r=Math.floor(Math.random()*3),c=Math.floor(Math.random()*3),X=rnd2();return{type:'write',r,c,X,par:22,text:`把資料 <b>${X}</b> 寫入位置 <b>(R${r}, C${c})</b>，其他位置的資料不可被破壞`};},
+  setupTask(t){const m=this.m;for(let i=0;i<3;i++)for(let c=0;c<3;c++)m.set(i,c,rnd2());m.set(t.r,t.c,1-t.X);
+    for(let c=0;c<3;c++){const b=rnd2();m.bl[c]=b;m.blb[c]=1-b;}
+    Object.assign(this.sig,{PRE:0,ACT:0,SAE:0,WE:0,D:rnd2(),ROW:(t.r+1+Math.floor(Math.random()*2))%3,COL:Math.floor(Math.random()*3)});this.dout='—';
+    t.snap=grid(3,3,(i,c)=>m.bit(i,c));},
+  rules(n,v,t){const e=[],s=this.sig,m=this.m;
+    if(n==='ROW'&&s.ACT)e.push('字元線開啟時不可變更列位址');
+    if(n==='COL'&&s.WE)e.push('寫入驅動器開啟時不可變更行位址');
+    if(n==='D'&&s.WE&&s.ACT)e.push('寫入中改變 D_in，會寫入錯誤資料');
+    if(n==='ACT'&&v===0&&s.WE&&s.ROW===t.r&&s.COL===t.c&&!m.settled(t.r,t.c,t.X))e.push('記憶胞尚未翻轉穩定就關閉字元線');
+    if(v!==1)return e;
+    if((n==='PRE'&&s.WE)||(n==='WE'&&s.PRE))e.push('預充與寫入驅動器同時驅動位元線（衝突）');
+    if(n==='PRE'&&s.ACT)e.push('字元線開啟時預充，可能把記憶胞翻轉');
+    if(n==='ACT'&&s.PRE)e.push('預充尚未關閉就開啟字元線');
+    if(n==='ACT'&&!s.PRE){for(let c=0;c<3;c++){if(s.WE&&c===s.COL)continue;if(m.bl[c]<0.9||m.blb[c]<0.9){e.push('仍有位元線沒有預充，開啟字元線會讓同列的半選記憶胞被誤寫');break;}}}
+    if(n==='ACT'&&s.WE&&s.ROW!==t.r)e.push(`列位址錯誤（應為 R${t.r}），會寫到別的位置`);
+    if(n==='WE'&&(s.COL!==t.c||s.D!==t.X))e.push('行位址或 D_in 設定錯誤就啟動寫入驅動器');
+    if(n==='WE'&&s.ACT&&s.ROW!==t.r)e.push(`列位址錯誤（應為 R${t.r}）`);
+    return e;},
+  isDone(t){const s=this.sig;return!s.ACT&&!s.WE&&!s.SAE&&this.m.settled(t.r,t.c,t.X);},
+  finalCheck(t){const e=[];for(let i=0;i<3;i++)for(let c=0;c<3;c++){if(i===t.r&&c===t.c)continue;if(this.m.bit(i,c)!==t.snap[i][c])e.push(`位置 (R${i}, C${c}) 的資料被誤寫`);}return e;}
+});
+
+/* ================= boot / routing ================= */
+const root=document.getElementById('pages');
+for(const id of['p1','p2','p2b','p3','p4','p5','p6'])PAGES[id].mount(root);
+for(const id of['p2','p2b']){const ph=document.querySelector(`#${id} .phead`);H('div',{class:'seg small vsw',role:'group','aria-label':'介面版本'},ph,`<a href="#p2" class="${id==='p2'?'on':''}">1T1C 記憶胞介面</a><a href="#p2b" class="${id==='p2b'?'on':''}">3T 記憶胞存取介面（課本圖 c）</a>`);}
+let current=null;
+function route(){let h=(location.hash||'#home').slice(1);if(!document.getElementById(h)||!(h==='home'||PAGES[h]))h='home';
+  document.querySelectorAll('.page').forEach(s=>s.classList.toggle('show',s.id===h));
+  document.querySelectorAll('#tabs a').forEach(a=>a.classList.toggle('on',a.getAttribute('href')==='#'+(h==='p2b'?'p2':h)));
+  current=PAGES[h]||null;const a=document.querySelector(`#tabs a[href="#${h==='p2b'?'p2':h}"]`);if(a)a.scrollIntoView({block:'nearest',inline:'nearest'});}
+window.addEventListener('hashchange',()=>{route();window.scrollTo(0,0);});route();
+document.getElementById('clearHist').onclick=()=>{HIST=[];saveHist();};renderHist();
+let last=performance.now();
+function loop(t){const dt=Math.min(0.05,Math.max(0,(t-last)/1000));last=t;if(current)current.frame(dt);requestAnimationFrame(loop);}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
