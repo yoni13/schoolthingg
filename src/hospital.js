@@ -17,7 +17,9 @@ export function buildHospital(ctx, x0, x1, z0, z1) {
   const wallUp = pbr('painted_plaster_wall', { rough: 0.92, color: 0xdfe5dc }), wallDado = pbr('painted_plaster_wall', { rough: 0.7, color: 0x7fa596 });
   const wallTile = pbr('long_white_tiles', { rough: 0.4, color: 0xdfe9e6 });
   const fLino = pbr('old_linoleum_flooring_01', { rough: 0.62, color: 0xc9d2c8 }), fTile = pbr('large_floor_tiles_02', { rough: 0.5, color: 0xd0d0cc }), fTerr = pbr('terrazzo_tiles', { rough: 0.5, color: 0xc8c8c4 }), fDirty = pbr('dirty_tiles', { rough: 0.6 });
-  const ceilM = pbr('ceiling_interior', { rough: 1, color: 0xb9beb8 }), slabM = pbr('concrete_wall_008', { rough: 0.9, color: 0x8a8d90 }), stairM = pbr('concrete_pavement', { rough: 0.75, color: 0x9a9a98 });
+  const ceilM = pbr('ceiling_interior', { rough: 1, color: 0xd9ddd6, nrm: 0.5 }), slabM = pbr('concrete_wall_008', { rough: 0.9, color: 0x8a8d90 }), stairM = pbr('concrete_pavement', { rough: 0.75, color: 0x9a9a98 });
+  // fake bounce light: lit rooms are never pitch black where the tubes cannot reach directly (ceilings above the fixtures, far corners)
+  for (const [m, k] of [[ceilM, 0.085], [wallUp, 0.04], [wallDado, 0.035], [wallTile, 0.04], [fLino, 0.02], [fTile, 0.02], [fTerr, 0.02], [fDirty, 0.02], [stairM, 0.02]]) { m.emissiveMap = m.map; m.emissive = new THREE.Color(0xcfe6dc).multiplyScalar(k); }
   const cotton = pbr('cotton_jersey', { rough: 1, color: 0xe6e8e2 }), blanket = pbr('cotton_jersey', { rough: 1, color: 0x5d9483 }), curtainM = pbr('cotton_jersey', { rough: 1, color: 0x8fb8aa }); curtainM.side = THREE.DoubleSide;
   const leather = pbr('fabric_leather_02', { rough: 0.6, color: 0x39413e });
   const enamel = std({ color: 0xe6e8e4, roughness: 0.35, metalness: 0.1 }), frameM = std({ color: 0x2c3236, roughness: 0.45, metalness: 0.8 }), chrome = std({ color: 0xc8ced4, roughness: 0.18, metalness: 1, envMapIntensity: 2 });
@@ -140,7 +142,7 @@ export function buildHospital(ctx, x0, x1, z0, z1) {
   function slab(k, hole) {   // the floor of level k (k = 1..NF), with a stairwell hole [u0,u1,v0,v1]
     const y = Y(k), [h0, h1, g0, g1] = hole, rects = [[0, h0, 0, D], [h1, W, 0, D], [h0, h1, 0, g0], [h0, h1, g1, D]];
     for (const [u0, u1, v0, v1] of rects) { if (u1 - u0 < 0.01 || v1 - v0 < 0.01) continue; box(slabM, X(u0), X(u1), y - SL + 0.012, y - 0.004, Z(v0), Z(v1)); colliders.push({ minX: X(u0), maxX: X(u1), minZ: Z(v0), maxZ: Z(v1), wall: false, roof: true, ceil: y - SL, h: y });
-      quad(ceilM, X(Math.max(u0, T)), X(Math.min(u1, W - T)), Z(Math.max(v0, T)), Z(Math.min(v1, D - T)), y - SL, false, 2.4); }
+      quad(ceilM, X(Math.max(u0, T)), X(Math.min(u1, W - T)), Z(Math.max(v0, T)), Z(Math.min(v1, D - T)), y - SL, false, 1.2); }
   }
 
   // ------------------------------------------------------------------ lights
@@ -386,7 +388,8 @@ export function buildHospital(ctx, x0, x1, z0, z1) {
   if (Q.shadow >= 1024) for (const d of dress) d.near.traverse(o => { if (o.isInstancedMesh && !o.material.transparent && o.geometry.boundingSphere && (o.geometry.boundingSphere.radius > 0.45)) o.castShadow = true; });
 
   // two shadow-casting ceiling lights follow the player from fixture to fixture; every other fixture is served by the shared point-light pool
-  const heroes = Q.shadow ? [0, 1].map(() => { const s = new THREE.SpotLight(0xffffff, 0, 13, 1.28, 0.7, 1.6); s.castShadow = true; s.shadow.mapSize.set(Q.shadow >= 2048 ? 1024 : 512, Q.shadow >= 2048 ? 1024 : 512); s.shadow.camera.near = 0.15; s.shadow.camera.far = 9; s.shadow.bias = -0.0025; s.shadow.normalBias = 0.03; s.shadow.autoUpdate = false; scene.add(s, s.target); return { s, rec: null, k: 0 }; }) : [];
+  const caps = ctx.renderer.capabilities, nHero = !Q.shadow || Q.lambert || caps.maxVaryings < 24 ? 0 : Q.shadow >= 2048 ? 2 : 1;   // each shadowed light costs a varying and a sampler in every material: stay well inside what weaker GPUs allow
+  const heroes = Array.from({ length: nHero }, () => 0).map(() => { const s = new THREE.SpotLight(0xffffff, 0, 13, 1.28, 0.7, 1.6); s.castShadow = true; s.shadow.mapSize.set(Q.shadow >= 2048 ? 1024 : 512, Q.shadow >= 2048 ? 1024 : 512); s.shadow.camera.near = 0.15; s.shadow.camera.far = 9; s.shadow.bias = -0.0025; s.shadow.normalBias = 0.03; s.shadow.autoUpdate = false; scene.add(s, s.target); return { s, rec: null, k: 0 }; });
   let heroT = 0; const want = [];
   function update(dt, t, pp) {
     const fa = (Math.sin(t * 43) > 0.2 || Math.sin(t * 5.3) > 0.55) ? 1 : 0.12, fb = (Math.sin(t * 2.1) + Math.sin(t * 13.7) * 0.5 + Math.sin(t * 31) * 0.3) > -0.7 ? 1 : 0.05;
@@ -395,10 +398,10 @@ export function buildHospital(ctx, x0, x1, z0, z1) {
     dress.forEach((d, k) => { d.pivot.visible = inside ? pp.y > Y(k) - 2.4 && pp.y < Y(k + 1) + 0.6 : k === 0 && !far; });
     for (const f of lts) if (f.mode !== undefined) f.intensity = near ? f.base * (f.mode === 1 ? fa : f.mode === 2 ? fb : 1) : 0;
     if (!heroes.length) return;
-    heroT -= dt; if (heroT <= 0) { heroT = 0.15; want.length = 0; if (near) { const c = fixtures.filter(f => pp.y > f.lv[0] && pp.y < f.lv[1]).map(f => [f.position.distanceToSquared(pp), f]).sort((a, b) => a[0] - b[0]); for (let i = 0; i < 2 && i < c.length; i++) if (c[i][0] < 150) want.push(c[i][1]); } }
+    heroT -= dt; if (heroT <= 0) { heroT = 0.15; want.length = 0; if (near) { const c = fixtures.filter(f => pp.y > f.lv[0] && pp.y < f.lv[1]).map(f => [f.position.distanceToSquared(pp), f]).sort((a, b) => a[0] - b[0]); for (let i = 0; i < nHero && i < c.length; i++) if (c[i][0] < 150) want.push(c[i][1]); } }
     for (const h of heroes) { const keep = h.rec && want.includes(h.rec);
       if (keep) h.k = Math.min(1, h.k + dt * 6); else { h.k = Math.max(0, h.k - dt * 6); if (h.k === 0) { if (h.rec) h.rec.heroK = 0; h.rec = want.find(w => !heroes.some(o => o.rec === w)) || null; if (h.rec) { h.s.position.copy(h.rec.position); h.s.position.y += 0.3; h.s.target.position.copy(h.rec.position); h.s.target.position.y -= 3; h.s.target.updateMatrixWorld(); h.s.color.copy(h.rec.color); } } }
-      if (h.rec) { h.rec.heroK = h.k; h.s.intensity = h.rec.intensity * h.k * 1.15; h.s.shadow.needsUpdate = h.k > 0; } else h.s.intensity = 0; }
+      if (h.rec) { h.rec.heroK = h.k; h.s.intensity = h.rec.intensity * h.k * 0.6; h.s.shadow.needsUpdate = h.k > 0; } else h.s.intensity = 0; }
   }
 
   const bedU = wardBeds[HERO];

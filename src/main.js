@@ -5,6 +5,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries as mergeGeo } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -27,7 +28,7 @@ const $ = (id) => document.getElementById(id);
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Q.pr); renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.15;
-renderer.shadowMap.enabled = Q.shadow > 0; renderer.shadowMap.type = Q.msaa ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+renderer.shadowMap.enabled = Q.shadow > 0; renderer.shadowMap.type = Q.ao ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
 document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.08, 400); camera.layers.enable(2); camera.layers.enable(3);   // 2 = effects, 3 = fine building detail (neither is drawn into the ground reflection)
@@ -137,6 +138,9 @@ if (Q.ao) {
   gtao.overrideVisibility = function () { const cache = this._visibilityCache; this.scene.traverse(o => { cache.set(o, o.visible); if (o.isPoints || o.isLine || o.userData.noAO) o.visible = false; }); };
   composer.addPass(gtao);
 }
+// cinematic depth of field: only while the camera is on rails (title, waking up, the drive out) — never during play
+let bokeh = null;
+if (Q.msaa) { bokeh = new BokehPass(scene, camera, { focus: 8, aperture: 0.00009, maxblur: 0.006 }); bokeh.enabled = false; const br = bokeh.render.bind(bokeh); bokeh.render = (...a) => { camera.layers.disable(2); br(...a); camera.layers.enable(2); }; composer.addPass(bokeh); }
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.42, 0.75, 1.0); { const bs = bloom.setSize.bind(bloom); bloom.setSize = (w, h) => bs(Math.round(w / 2), Math.round(h / 2)); } composer.addPass(bloom);
 composer.addPass(new OutputPass());
 const finalPass = new ShaderPass({
@@ -273,7 +277,6 @@ function updateVfx(dt) {
 
 // ============================================================================ the ninja (original rig and proportions, new materials)
 const ninja = createNinja({ gltf: xbot, katana: katanaGltf.scene, tex: { clothD, clothN, leatherD, leatherN, leatherR } }); scene.add(ninja.root);
-const rimLight = new THREE.PointLight(0x9fc8ff, 0, 7, 1.6); scene.add(rimLight);   // a cool kicker behind the hero, opposite the camera, so the dark suit always reads against the night
 const bladeTrail = new Trail(scene, new THREE.Color(0.35, 0.9, 1.0), 30);
 const SCARF_N = 12, scarf = { pts: [], prev: [] };
 for (let i = 0; i < SCARF_N; i++) { scarf.pts.push(new THREE.Vector3()); scarf.prev.push(new THREE.Vector3()); }
@@ -303,6 +306,26 @@ const P = {
 };
 let frameN = 0, hitstop = 0, kills = 0, waveKills = 0, ult = 0, chronoT = 0;   // kills / chronoT are shared with the zombie code
 const cam = { fixed: false };
+// ---- grounding: a soft contact shadow under every character (neon and ceiling tubes cast none), and blood that stays where the dead fall
+const dotTex = (draw) => { const c = document.createElement('canvas'); c.width = c.height = 256; draw(c.getContext('2d'), 256); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; };
+const flatGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), BLOB_N = 48, SPLAT_N = 40, _grm = new THREE.Matrix4(), _grq = new THREE.Quaternion(), _grp = new THREE.Vector3(), _grs = new THREE.Vector3();
+const blobMesh = new THREE.InstancedMesh(flatGeo, new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.62, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+  map: dotTex((g, S) => { const gr = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.45, 'rgba(255,255,255,0.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, S, S); }) }), BLOB_N);
+blobMesh.frustumCulled = false; blobMesh.userData.noAO = true; blobMesh.renderOrder = 1; scene.add(blobMesh);
+const splatMesh = new THREE.InstancedMesh(flatGeo, new THREE.MeshStandardMaterial({ color: 0x5a0606, roughness: 0.12, metalness: 0, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3, envMapIntensity: 2,
+  map: dotTex((g, S) => { g.fillStyle = '#fff'; for (let i = 0; i < 30; i++) { const a = Math.random() * 7, r = Math.pow(Math.random(), 1.5) * 60, rr = 12 + Math.random() * 34; g.beginPath(); g.arc(S / 2 + Math.cos(a) * r, S / 2 + Math.sin(a) * r, rr, 0, 7); g.fill(); } for (let i = 0; i < 70; i++) { const a = Math.random() * 7, r = 70 + Math.random() * 55; g.beginPath(); g.arc(S / 2 + Math.cos(a) * r, S / 2 + Math.sin(a) * r, 1 + Math.random() * 5, 0, 7); g.fill(); } }) }), SPLAT_N);
+splatMesh.frustumCulled = false; splatMesh.userData.noAO = true; splatMesh.count = 0; scene.add(splatMesh);
+const splats = []; let splatI = 0;
+function splat(x, y, z, size) { const s = { x, y: y + 0.04 + (splatI % 7) * 0.0015, z, size: size * rand(1.5, 2.4), rot: Math.random() * 6.28, t: 0, i: splatI % SPLAT_N }; splats[s.i] = s; splatI++; splatMesh.count = Math.min(splatI, SPLAT_N); }
+function clearSplats() { splats.length = 0; splatI = 0; splatMesh.count = 0; }
+function updateGrounding(dt) {
+  let n = 0; const put = (x, y, z, s) => { if (n >= BLOB_N) return; _grm.compose(_grp.set(x, y, z), _grq.identity(), _grs.set(s, 1, s)); blobMesh.setMatrixAt(n++, _grm); };
+  if (ninja.root.visible && !P.seated) { const g = groundHeightAt(P.pos.x, P.pos.z, P.pos.y + 0.1), h = clamp(P.pos.y - g, 0, 6); put(P.pos.x, g + 0.045, P.pos.z, 1.25 * (1 + h * 0.18) * (1 - h / 9)); }
+  for (const z of zombies) if (z.state !== 'spawn' && !(z.state === 'dead' && z.t > 0.6)) put(z.root.position.x, z.gy + 0.045, z.root.position.z, 1.35 * z.T.scale);
+  blobMesh.count = n; blobMesh.instanceMatrix.needsUpdate = true;
+  let dirty = false; for (const s of splats) { if (!s || s.t >= 1) continue; s.t = Math.min(1, s.t + dt * 1.4); const k = 0.25 + 0.75 * (1 - Math.pow(1 - s.t, 3)); _grm.compose(_grp.set(s.x, s.y, s.z), _grq.setFromAxisAngle(UP, s.rot), _grs.set(s.size * k, 1, s.size * k)); splatMesh.setMatrixAt(s.i, _grm); dirty = true; }
+  if (dirty) splatMesh.instanceMatrix.needsUpdate = true;
+}
 // ============================================================================ the dead
 const zombies = [], Z_BONES = ['Spine', 'Spine2', 'Neck', 'Head', 'RightArm', 'RightForeArm', 'LeftArm', 'LeftForeArm', 'RightHand', 'LeftHand'];
 const ZTYPES = {
@@ -377,7 +400,7 @@ function damageZombie(z, dmg, dir, heavy = false, kind = '') {
   const p = v1.copy(z.root.position); p.y += 1.25 * z.T.scale;
   sparks.burst(p, 16, C_SPARK, { speed: 5, up: 2, life: 0.45, size: 0.045, dir }); blobs.burst(p, 18, C_BLOOD, { speed: 3.2, up: 2.5, life: 0.9, size: 0.07, dir, alpha: 0.95 });
   P.hits++; P.hitT = 2.2; SFX.hit();
-  if (z.hp <= 0) { z.state = 'dead'; z.t = 0; for (const w of z.weapons || []) w.visible = false; z.act.timeScale = 0.15; kills++; waveKills++; P.kills++; if (z.type === 'exploder') { const ep = z.root.position.clone().setY(z.gy + 1); after(0.05, () => explodeAt(ep, 4.5, true)); } P.ult = Math.min(100, P.ult + (z.elite ? 9 : 4.5)); SFX.die(); sparks.burst(p, 50, C_EMBER, { speed: 2.5, up: 3, life: 1.3, size: 0.05, gravity: -1.2 }); }
+  if (z.hp <= 0) { z.state = 'dead'; z.t = 0; splat(z.root.position.x, z.gy, z.root.position.z, z.T.scale); for (const w of z.weapons || []) w.visible = false; z.act.timeScale = 0.15; kills++; waveKills++; P.kills++; if (z.type === 'exploder') { const ep = z.root.position.clone().setY(z.gy + 1); after(0.05, () => explodeAt(ep, 4.5, true)); } P.ult = Math.min(100, P.ult + (z.elite ? 9 : 4.5)); SFX.die(); sparks.burst(p, 50, C_EMBER, { speed: 2.5, up: 3, life: 1.3, size: 0.05, gravity: -1.2 }); }
   else if (z.state !== 'attack' && z.state !== 'leap' && z.state !== 'fuse' && z.T.scale < 1.5 && z.type !== 'brute' && z.type !== 'armored' && !(z.elite && z.state === 'windup')) { z.state = 'stagger'; z.t = 0; }
   return true;
 }
@@ -854,18 +877,19 @@ function animateNinja(dt, time) {
     atk: swing ? { combo: P.combo, t: clamp(1 - P.atkTimer / P.atkDur, 0, 1), throwing: P.throwAnim > 0 } : null, block: P.block && !swing, dash: P.dash > 0, storm: P.storm > 0,
     dead: P.dead ? clamp(P.deadT * 2.2, 0.02, 1) : 0, wake: waking ? clamp((wake.t - 2.7) / 0.9, 0, 1) : null });
   if (P.throwAnim > 0) P.throwAnim -= dt;
-  ninja.sword.updateMatrixWorld(true); if ((swing && !(P.throwAnim > 0)) || P.dash > 0 || P.storm > 0) bladeTrail.push(ninja.bladeBase(_bb), ninja.bladeTip(_bt), time); bladeTrail.update(time, 0.2);
+  ninja.sword.updateMatrixWorld(true); if ((swing && !(P.throwAnim > 0)) || P.dash > 0 || P.storm > 0) bladeTrail.push(ninja.bladeBase(_bb), ninja.bladeTip(_bt), time); bladeTrail.update(time, 0.14);
   if (phase !== 'cine') ninja.root.visible = !(P.hurtFlash > 0.5 && Math.floor(time * 30) % 2 === 0);
-  v1.subVectors(P.pos, camera.position).setY(0).normalize(); rimLight.position.set(P.pos.x + v1.x * 1.6 - v1.z * 0.9, P.pos.y + 2.2, P.pos.z + v1.z * 1.6 + v1.x * 0.9); rimLight.intensity = ninja.root.visible ? 9 : 0;
 }
 
 // ============================================================================ camera (original feel: wide FOV, speed kick)
 const camPos = new THREE.Vector3(0, 5, 25); let camFov = 70;
 function updateCamera(dt) {
   if (cam.fixed) return; camPitch = clamp(camPitch, -0.35, 1.25);
-  const target = P.pos.clone().add(new THREE.Vector3(0, 1.7, 0)), back = new THREE.Vector3(Math.sin(camYaw) * Math.cos(camPitch), Math.sin(camPitch), Math.cos(camYaw) * Math.cos(camPitch));
+  const cl = ceilAt(P.pos.x, P.pos.z, P.pos.y - 0.6), target = P.pos.clone().add(new THREE.Vector3(0, 1.7, 0)); target.y = Math.min(target.y, cl - 0.45); const back = new THREE.Vector3(Math.sin(camYaw) * Math.cos(camPitch), Math.sin(camPitch), Math.cos(camYaw) * Math.cos(camPitch));
   let dist = 5.6; for (let s = 0.4; s <= 5.6; s += 0.15) if (camBlocked(target.x + back.x * s, target.y + back.y * s, target.z + back.z * s, 0.3)) { dist = Math.max(1.0, s - 0.35); break; }
-  const want = target.clone().addScaledVector(back, dist); want.y = Math.max(groundHeightAt(want.x, want.z, want.y) + 0.5, want.y);
+  const want = target.clone().addScaledVector(back, dist);
+  { const g = groundHeightAt(want.x, want.z, Math.min(want.y, target.y)); if (g <= target.y + 0.2) want.y = Math.max(g + 0.5, want.y); }   // stay above the ground the player could stand on — never hop onto wall tops or the storey above
+  want.y = Math.min(want.y, cl - 0.3, ceilAt(want.x, want.z, P.pos.y - 0.6) - 0.3);   // and under the ceiling
   camPos.lerp(want, 1 - Math.exp(-(P.ultState ? 8 : 20) * dt)); camera.position.copy(camPos);
   if (camShake > 0) { camera.position.add(new THREE.Vector3(rand(-1, 1), rand(-1, 1), rand(-1, 1)).multiplyScalar(camShake * 0.35)); camShake = Math.max(0, camShake - dt * 2.2); }
   camera.lookAt(target);
@@ -935,7 +959,7 @@ function resetGame() {
   for (const z of zombies) scene.remove(z.root); zombies.length = 0; for (const p of projectiles) scene.remove(p.m); projectiles.length = 0; for (const f of fireballs) scene.remove(f.m); fireballs.length = 0; for (const a of acids) scene.remove(a.m); acids.length = 0; later.length = 0;
   Object.assign(P, { unlock: { shuriken: false, storm: false, ult: false }, abil: { lightning: false, chrono: false, fire: false }, poison: 0, exhausted: false, hp: 100, stamina: 100, ult: 0, score: 0, hits: 0, dead: false, wall: null, dash: 0, storm: 0, ultState: null, invuln: 1, combo: 0, atkTimer: 0, atkCd: 0, queued: false, facing: Math.PI, onGround: true, jumps: 2, lungeT: 0 });
   for (const k in P.cd) P.cd[k] = 0; P.pos.set(0, 0, 14); P.vel.set(0, 0, 0); camYaw = 0; camPitch = 0.2; camShake = 0; chronoT = 0; hitstop = 0; mouse.left = mouse.right = false; P.block = false;
-  wave = 1; kills = 0; waveKills = 0; gameTime = 0; waveDelay = 1.5; spawnTimer = 0; resetScrolls(0); resetCollapse(); resetEscape();
+  clearSplats(); wave = 1; kills = 0; waveKills = 0; gameTime = 0; waveDelay = 1.5; spawnTimer = 0; resetScrolls(0); resetCollapse(); resetEscape();
   ninja.root.position.copy(P.pos); ninja.root.rotation.y = P.facing; resetScarf(); camPos.set(0, 3, 20);
 }
 function show(id) { for (const s of ['start', 'pause', 'over', 'victory']) $(s).style.display = s === id ? 'flex' : 'none'; }
@@ -986,6 +1010,8 @@ function tick(rawDt, render = true) {
     updateVfx(dt); world.update(dt, time, P.pos); sparks.update(dt); blobs.update(dt); steam.update(dt);
     steamT -= dt; if (steamT <= 0) { steamT = 0.07; for (const p of world.steamPoints) if (Math.abs(p.x - P.pos.x) + Math.abs(p.z - P.pos.z) < 60) steam.emit(v1.set(p.x + rand(-0.15, 0.15), p.y, p.z + rand(-0.15, 0.15)), v2.set(rand(-0.15, 0.35), rand(0.5, 0.9), rand(-0.15, 0.15)), C_STEAM, rand(2.5, 4.5), rand(0.5, 0.9), -0.05, 0.05); }
   }
+  updateGrounding(dt);
+  if (bokeh) { const cin = state === 'title' || (state === 'play' && (phase === 'wake' || phase === 'cine')); bokeh.enabled = cin; if (cin) bokeh.uniforms.focus.value = state === 'title' ? 9 : Math.max(1.2, camera.position.distanceTo(phase === 'cine' ? world.car.position : P.pos)); }
   rain.mesh.visible = !(HOSP && inHosp(camera.position) && camera.position.y < HOSP.h - 0.2); rain.update(time, camera);
   const U = finalPass.uniforms; U.uTime.value = time; U.uHurt.value = P.hurtFlash * 0.8 + (P.hp < 30 && state === 'play' ? 0.25 + 0.1 * Math.sin(time * 6) : 0) + (P.poison > 0 ? 0.1 : 0);
   U.uDash.value = damp(U.uDash.value, P.dash > 0 ? 1 : 0, 10, rawDt); U.uGray.value = damp(U.uGray.value, P.dead ? 1 : 0, 2, rawDt); U.uChrono.value = damp(U.uChrono.value, chronoT > 0 ? 1 : 0, 6, rawDt);

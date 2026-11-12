@@ -108,7 +108,7 @@ export class Trail {
     const idx = []; for (let i = 0; i < N - 1; i++) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 2, i * 2 + 1, i * 2 + 3); g.setIndex(idx);
     this.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, uniforms: { uColor: { value: color } },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-      fragmentShader: 'varying vec2 vUv; uniform vec3 uColor; void main(){ float a = pow(clamp(1.0 - vUv.x, 0.0, 1.0), 2.2); float edge = pow(clamp(vUv.y, 0.0, 1.0), 5.0); vec3 c = mix(uColor * 0.5, vec3(1.2, 1.5, 1.7), edge) * (0.03 + edge * 0.9); gl_FragColor = vec4(c * a * smoothstep(0.0, 0.5, vUv.y), 1.0); }' }));
+      fragmentShader: 'varying vec2 vUv; uniform vec3 uColor; void main(){ float a = pow(clamp(1.0 - vUv.x, 0.0, 1.0), 2.2); float edge = pow(clamp(vUv.y, 0.0, 1.0), 5.0); vec3 c = mix(uColor * 0.5, vec3(1.2, 1.5, 1.7), edge) * (0.03 + edge * 0.9); gl_FragColor = vec4(c * a * 0.4 * smoothstep(0.0, 0.5, vUv.y), 1.0); }' }));
     this.mesh.frustumCulled = false; this.mesh.layers.set(2); this.mesh.userData.noAO = true; scene.add(this.mesh); g.setDrawRange(0, 0);
   }
   push(base, tip, t) { this.samples.unshift({ b: base.clone(), t: tip.clone(), time: t }); if (this.samples.length > this.N) this.samples.pop(); }

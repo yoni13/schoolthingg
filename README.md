@@ -20,6 +20,7 @@ WASD move · Mouse look · Shift sprint · Space jump / double jump / wall jump 
 - 1 Lightning · 2 Chrono · 3 Fire Wave: rooftop scrolls under golden beams, from wave 4 (yellow diamonds on the radar)
 - From wave 5 buildings collapse; spitters lob acid (a swing, dash or Blade Storm bats it back)
 - 9 waves, then reach the car (orange beam) and press G
+- You wake on the second floor of the hospital: three storeys of wards, theatres and offices joined by a staircase that also leads to the roof. The dead climb after you.
 
 The map is a city district of about 340 x 360 m (94 blocks) around the original alley. Distant blocks drop their fine detail.
 
@@ -30,7 +31,10 @@ The map is a city district of about 340 x 360 m (94 blocks) around the original 
 - Shadow-mapped moonlight and street lamps, volumetric light cones, neon point lights, lightning
 - Light-reactive rain streaks and splashes, steam, sparks, embers
 - GTAO ambient occlusion, HDR bloom, ACES tone mapping, MSAA, colour grade, grain, chromatic aberration
-- Skinned characters with procedural sword poses, blade trail, cloth scarf, dissolve deaths
+- Walkable hospital interior: per-storey dressing, real window openings, flickering tubes, a shadow-casting ceiling light that follows you
+- Motion-captured, armoured shinobi whose arms are solved by IK onto a scanned katana (two-handed stances and cuts), blade trail, cloth scarf
+- Contact shadows under every character, blood that stays where the dead fall, dissolve deaths
+- Depth of field in the title, wake-up and escape shots; contrast-limited sharpening
 
 ## Credits
 - Textures, props, facade kit, katana, HDRI: Poly Haven (CC0) — polyhaven.com

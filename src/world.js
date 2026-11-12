@@ -696,7 +696,7 @@ export async function buildWorld({ scene, renderer, manager, Q }) {
   }
   // ---------------------------------------------------------------- the hospital: three storeys, with a ground-floor ward you can walk into (the game starts in one of its beds)
   let hospital = null;
-  const hctx = { M, B, prop, pbr, canvasTex, signMat, drawBoxSign, blade, addLight, colliders, rng, rand, pick, Q, FONT, scene, bakeBlock, buildings, lods };
+  const hctx = { renderer, M, B, prop, pbr, canvasTex, signMat, drawBoxSign, blade, addLight, colliders, rng, rand, pick, Q, FONT, scene, bakeBlock, buildings, lods };
   function genHospital(x0, x1, z0, z1) { hospital = buildHospital(hctx, x0, x1, z0, z1); }
   const XC = [], ZR = [];
   for (let k = 0; k < 4; k++) { XC.push([33 + k * 36, 57 + k * 36]); XC.unshift([-57 - k * 36, -33 - k * 36]); }
@@ -720,7 +720,7 @@ export async function buildWorld({ scene, renderer, manager, Q }) {
     for (const sp of lampSpots) if (sp.castShadow) { sp.shadow.autoUpdate = false; if (frame % 3 === 1 && sp.position.distanceTo(pp) < 60) sp.shadow.needsUpdate = true; }
     for (const b of buildings) if (b.cone) b.cone.visible = !b.state;
     poolT -= dt; if (poolT <= 0) { poolT = 0.25; const near = spots.filter(s => s.intensity > 0.01 && (!s.lv || (pp.y > s.lv[0] && pp.y < s.lv[1]))).map(s => [s.position.distanceToSquared(pp), s]).sort((a, b) => a[0] - b[0]); for (let i = 0; i < POOL.length; i++) assigned[i] = near[i] ? near[i][1] : null; }
-    for (let i = 0; i < POOL.length; i++) { const L = POOL[i], sp = assigned[i]; if (!sp) { L.intensity = 0; continue; } L.position.copy(sp.position); L.color.copy(sp.color); L.distance = sp.distance; L.intensity = sp.intensity * (1 - (sp.heroK || 0)) * THREE.MathUtils.clamp((50 - sp.position.distanceTo(pp)) / 12, 0, 1); }
+    for (let i = 0; i < POOL.length; i++) { const L = POOL[i], sp = assigned[i]; if (!sp) { L.intensity = 0; continue; } L.position.copy(sp.position); L.color.copy(sp.color); L.distance = sp.distance; L.intensity = sp.intensity * (1 - 0.5 * (sp.heroK || 0)) * THREE.MathUtils.clamp((50 - sp.position.distanceTo(pp)) / 12, 0, 1); }
     moon.target.position.set(Math.round(pp.x / 4) * 4, 0, Math.round(pp.z / 4) * 4); moon.position.copy(moon.target.position).add(moonOff);
     // flicker: bar sign buzzes, nook tube stutters, hero sign breathes
     const buzz = (Math.sin(t * 61) > -0.2 || Math.sin(t * 7.3) > 0.4) ? 1 : 0.25; neonBar.material.color.setScalar(2.4 * buzz);
